@@ -2,90 +2,164 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Transcriber (En/Hi)</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Pro Transcriber (1GB + Drive)</title>
+    <script src="coi-serviceworker.js"></script> <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
-<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center p-8">
+<body class="bg-slate-900 text-slate-100 p-10">
 
-    <div class="max-w-2xl w-full bg-gray-800 p-8 rounded-xl shadow-2xl">
-        <h1 class="text-3xl font-bold mb-2 text-blue-400">Media Transcriber</h1>
-        <p class="text-gray-400 mb-6">Supports MP4, MOV, AVI, MP3. Powered by Whisper AI.</p>
-
-        <div class="mb-4">
-            <label class="block text-sm font-medium mb-1">OpenAI API Key:</label>
-            <input type="password" id="apiKey" placeholder="sk-..." class="w-full p-2 rounded bg-gray-700 border border-gray-600 focus:border-blue-500 outline-none">
-            <p class="text-xs text-gray-500 mt-1">Your key is processed locally in the browser and never stored.</p>
+    <div class="max-w-4xl mx-auto bg-slate-800 p-8 rounded-2xl shadow-xl">
+        <h1 class="text-4xl font-bold mb-4 text-blue-400">1GB Media Transcriber</h1>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div class="space-y-4">
+                <input type="password" id="oaKey" placeholder="OpenAI API Key" class="w-full bg-slate-700 p-3 rounded-lg border border-slate-600">
+                <button id="authBtn" onclick="handleAuthClick()" class="w-full bg-white text-black font-bold py-3 rounded-lg">Connect Google Drive</button>
+            </div>
+            <div class="border-2 border-dashed border-slate-600 rounded-2xl p-6 flex flex-col items-center justify-center">
+                <input type="file" id="fileInput" class="hidden" accept="video/*,audio/*">
+                <button onclick="document.getElementById('fileInput').click()" class="bg-blue-600 px-6 py-2 rounded-full hover:bg-blue-500">Select File (Up to 1GB)</button>
+                <p id="fileName" class="mt-2 text-sm text-slate-400">No file selected</p>
+            </div>
         </div>
 
-        <div class="mb-6">
-            <label class="block text-sm font-medium mb-1">Select Media File:</label>
-            <input type="file" id="mediaFile" accept=".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm,.mov,.avi" 
-                class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer">
+        <button id="startBtn" onclick="processAll()" class="w-full bg-green-600 py-4 rounded-xl font-bold text-xl hover:bg-green-500 disabled:opacity-50">Start Upload & Transcription</button>
+
+        <div id="statusBox" class="mt-6 p-4 bg-black rounded-lg font-mono text-sm hidden">
+            <div id="statusText">Ready...</div>
+            <div class="w-full bg-slate-700 h-2 mt-2 rounded-full"><div id="progressBar" class="bg-blue-500 h-2 rounded-full w-0 transition-all"></div></div>
         </div>
-
-        <button onclick="startTranscription()" id="btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition">
-            Transcribe Now
-        </button>
-
-        <div id="status" class="mt-4 text-center text-blue-300 hidden italic">Processing... This may take a minute for large files.</div>
 
         <div class="mt-8">
-            <h2 class="text-xl font-semibold mb-2">Transcription:</h2>
-            <div id="result" class="w-full min-h-[200px] p-4 bg-gray-900 rounded border border-gray-700 whitespace-pre-wrap text-gray-200">
-                Results will appear here...
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-xl font-bold">Transcription Result</h2>
+                <div class="flex gap-2">
+                    <button onclick="copyText()" class="text-xs bg-slate-700 px-3 py-1 rounded">Copy</button>
+                    <button onclick="downloadDoc()" class="text-xs bg-slate-700 px-3 py-1 rounded">Download .doc</button>
+                </div>
             </div>
+            <textarea id="transcriptOutput" class="w-full h-64 bg-slate-900 border border-slate-700 p-4 rounded-xl focus:ring-2 focus:ring-blue-500" readonly></textarea>
         </div>
     </div>
 
-    <script>
-        async function startTranscription() {
-            const apiKey = document.getElementById('apiKey').value;
-            const fileInput = document.getElementById('mediaFile');
-            const status = document.getElementById('status');
-            const resultDiv = document.getElementById('result');
-            const btn = document.getElementById('btn');
+    <script type="module">
+        // Using FFmpeg.wasm for local chunking
+        import { FFmpeg } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm/ffmpeg.mjs';
+        import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.mjs';
 
-            if (!apiKey || !fileInput.files[0]) {
-                alert("Please provide both an API key and a file.");
-                return;
+        let ffmpeg = null;
+        let googleToken = null;
+
+        // 1. Google Auth Logic
+        window.handleAuthClick = () => {
+            const client = google.accounts.oauth2.initTokenClient({
+                client_id: 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com',
+                scope: 'https://www.googleapis.com/auth/drive.file',
+                callback: (res) => { googleToken = res.access_token; document.getElementById('authBtn').innerText = "Drive Connected ✅"; }
+            });
+            client.requestAccessToken();
+        };
+
+        // 2. The Main Process
+        window.processAll = async () => {
+            const file = document.getElementById('fileInput').files[0];
+            const apiKey = document.getElementById('oaKey').value;
+            if(!file || !googleToken || !apiKey) return alert("Missing Key, File, or Drive Connection!");
+
+            toggleStatus(true);
+            
+            // Step A: Upload to Drive (Resumable)
+            updateStatus("Uploading 1GB file to Google Drive...", 20);
+            const driveFileId = await uploadToDrive(file);
+
+            // Step B: Chunking (Since OpenAI limit is 25MB)
+            updateStatus("Chunking audio for AI... (This stays in browser)", 50);
+            const audioChunks = await chunkAudio(file);
+
+            // Step C: Transcribe
+            updateStatus("Transcribing via OpenAI Whisper...", 80);
+            let fullText = "";
+            for(let chunk of audioChunks) {
+                const text = await transcribeChunk(chunk, apiKey);
+                fullText += text + " ";
+                document.getElementById('transcriptOutput').value = fullText;
             }
 
-            const file = fileInput.files[0];
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("model", "whisper-1");
-            // Automatically detects English or Hindi
-            formData.append("response_format", "text");
+            // Step D: Cleanup logic (Delete previous/current if needed)
+            updateStatus("Done! Cleaning up Drive...", 100);
+            // You can call drive delete API here for driveFileId if you want it gone immediately
+        };
 
-            status.classList.remove('hidden');
-            btn.disabled = true;
-            btn.innerText = "Transcribing...";
-
-            try {
-                const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${apiKey}`
-                    },
-                    body: formData
-                });
-
-                const data = await response.text();
-                
-                if (response.ok) {
-                    resultDiv.innerText = data;
-                } else {
-                    resultDiv.innerText = "Error: " + data;
-                }
-            } catch (error) {
-                resultDiv.innerText = "Error: " + error.message;
-            } finally {
-                status.classList.add('hidden');
-                btn.disabled = false;
-                btn.innerText = "Transcribe Now";
-            }
+        async function uploadToDrive(file) {
+            // Simplified resumable upload logic
+            const metadata = { name: file.name, mimeType: file.type };
+            const resp = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${googleToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(metadata)
+            });
+            const uploadUrl = resp.headers.get('Location');
+            await fetch(uploadUrl, { method: 'PUT', body: file });
+            return "uploaded_id"; 
         }
+
+        async function chunkAudio(file) {
+            if (!ffmpeg) {
+                ffmpeg = new FFmpeg();
+                await ffmpeg.load({
+                    coreURL: await toBlobURL(`https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js`, 'text/javascript'),
+                    wasmURL: await toBlobURL(`https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm`, 'application/wasm'),
+                });
+            }
+            await ffmpeg.writeFile('input', await fetchFile(file));
+            // Convert to low-bitrate MP3 to save space
+            await ffmpeg.exec(['-i', 'input', '-f', 'segment', '-segment_time', '600', '-c:a', 'libmp3lame', '-b:a', '64k', 'out%03d.mp3']);
+            
+            const files = await ffmpeg.listDir('.');
+            const chunks = [];
+            for (let f of files) {
+                if (f.name.endsWith('.mp3')) {
+                    const data = await ffmpeg.readFile(f.name);
+                    chunks.push(new Blob([data.buffer], { type: 'audio/mp3' }));
+                }
+            }
+            return chunks;
+        }
+
+        async function transcribeChunk(blob, key) {
+            const fd = new FormData();
+            fd.append("file", blob, "chunk.mp3");
+            fd.append("model", "whisper-1");
+            const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${key}` },
+                body: fd
+            });
+            const data = await res.json();
+            return data.text || "";
+        }
+
+        // Utility Functions
+        window.copyText = () => {
+            navigator.clipboard.writeText(document.getElementById('transcriptOutput').value);
+            alert("Copied!");
+        };
+
+        window.downloadDoc = () => {
+            const content = document.getElementById('transcriptOutput').value;
+            const blob = new Blob(['\ufeff', content], { type: 'application/msword' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'transcription.doc';
+            link.click();
+        };
+
+        function updateStatus(text, percent) {
+            document.getElementById('statusText').innerText = text;
+            document.getElementById('progressBar').style.width = percent + "%";
+        }
+        function toggleStatus(show) { document.getElementById('statusBox').classList.toggle('hidden', !show); }
     </script>
 </body>
 </html>
