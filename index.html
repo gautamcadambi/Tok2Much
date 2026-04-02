@@ -280,7 +280,6 @@
     let googleToken = null;
     let selectedFile = null;
     let selectedLang = 'en';
-    const MAX_CHUNK_BYTES = 24 * 1024 * 1024; // 24 MB (Whisper limit is 25 MB)
 
     // ── Lang toggle ────────────────────────────────────────────────────────────
     window.setLang = (lang) => {
@@ -339,42 +338,24 @@
         document.getElementById('transcriptOutput').value = '';
 
         try {
-            let fileToChunk = selectedFile;
-            const isVideo = /\.(mp4|mov|avi|webm)$/i.test(selectedFile.name);
-
-            // Step 1: If Drive connected and file > 25 MB, upload to Drive first (optional backup)
+            // Step 1: Optional Drive backup for large files
             if (googleToken && selectedFile.size > 25 * 1024 * 1024) {
-                setStatus('Uploading to Google Drive (backup)…', 10);
-                try {
-                    await uploadToDrive(selectedFile);
-                } catch(e) {
-                    console.warn('Drive upload failed, continuing anyway:', e);
-                }
+                setStatus('Uploading to Google Drive (backup)…', 5);
+                try { await uploadToDrive(selectedFile); }
+                catch(e) { console.warn('Drive upload failed, continuing:', e); }
             }
 
-            // Step 2: For video, try to extract audio via FFmpeg (with fallback)
-            if (isVideo) {
-                setStatus('Extracting audio from video…', 20);
-                try {
-                    fileToChunk = await extractAudioViaFFmpeg(selectedFile);
-                    setStatus('Audio extracted, preparing chunks…', 30);
-                } catch(e) {
-                    console.warn('FFmpeg failed, sending video directly:', e);
-                    setStatus('Sending video directly (audio extraction skipped)…', 30);
-                }
-            }
+            // Step 2: Decode audio from any video/audio file using Web Audio API
+            setStatus('Decoding audio from file…', 10);
+            const audioChunks = await decodeAndChunkAudio(selectedFile);
+            setStatus(`Audio decoded → ${audioChunks.length} chunk(s) to transcribe`, 30);
 
-            // Step 3: Chunk the file
-            setStatus('Splitting into chunks…', 35);
-            const chunks = chunkBlob(fileToChunk);
-            setStatus(`Processing ${chunks.length} chunk(s)…`, 40);
-
-            // Step 4: Transcribe each chunk
+            // Step 3: Transcribe each chunk
             let fullText = '';
-            for (let i = 0; i < chunks.length; i++) {
-                const pct = 40 + Math.round((i / chunks.length) * 55);
-                setStatus(`Transcribing chunk ${i + 1} of ${chunks.length}…`, pct);
-                const chunkText = await transcribeChunk(chunks[i], apiKey, selectedFile.name);
+            for (let i = 0; i < audioChunks.length; i++) {
+                const pct = 30 + Math.round((i / audioChunks.length) * 65);
+                setStatus(`Transcribing chunk ${i + 1} of ${audioChunks.length}…`, pct);
+                const chunkText = await transcribeChunk(audioChunks[i], apiKey);
                 fullText += (fullText ? ' ' : '') + chunkText;
                 document.getElementById('transcriptOutput').value = fullText;
             }
@@ -391,44 +372,79 @@
         }
     };
 
-    // ── Chunk blob by size (no FFmpeg needed for audio) ────────────────────────
-    function chunkBlob(blob) {
+    // ── Decode audio via Web Audio API, re-encode as WAV chunks ───────────────
+    // This works for MP4, MOV, AVI, MP3, WAV, M4A — anything the browser can decode.
+    // No FFmpeg / SharedArrayBuffer / WASM needed.
+    async function decodeAndChunkAudio(file) {
+        setStatus('Reading file into memory…', 12);
+        const arrayBuffer = await file.arrayBuffer();
+
+        setStatus('Decoding audio (this may take a moment for large files)…', 18);
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        let audioBuffer;
+        try {
+            audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        } catch(e) {
+            await audioCtx.close();
+            throw new Error('Browser could not decode this file. Try converting to MP3 or WAV first. Details: ' + e.message);
+        }
+        await audioCtx.close();
+
+        // Mix down to mono Float32 PCM at 16kHz
+        const sampleRate = audioBuffer.sampleRate; // already 16000 if context was 16k
+        const numChannels = audioBuffer.numberOfChannels;
+        const length = audioBuffer.length;
+
+        // Mono mix
+        const mono = new Float32Array(length);
+        for (let ch = 0; ch < numChannels; ch++) {
+            const channelData = audioBuffer.getChannelData(ch);
+            for (let i = 0; i < length; i++) mono[i] += channelData[i] / numChannels;
+        }
+
+        // Split into ~10-minute segments (10 * 60 * 16000 samples)
+        const CHUNK_SAMPLES = 10 * 60 * sampleRate;
         const chunks = [];
         let offset = 0;
-        while (offset < blob.size) {
-            chunks.push(blob.slice(offset, offset + MAX_CHUNK_BYTES));
-            offset += MAX_CHUNK_BYTES;
+        while (offset < mono.length) {
+            const slice = mono.slice(offset, offset + CHUNK_SAMPLES);
+            chunks.push(float32ToWavBlob(slice, sampleRate));
+            offset += CHUNK_SAMPLES;
         }
         return chunks;
     }
 
-    // ── FFmpeg audio extraction (optional, graceful fallback) ──────────────────
-    async function extractAudioViaFFmpeg(file) {
-        const { FFmpeg } = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm/ffmpeg.mjs');
-        const { fetchFile, toBlobURL } = await import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.mjs');
+    // ── Convert Float32 PCM → WAV Blob (Whisper loves WAV) ────────────────────
+    function float32ToWavBlob(samples, sampleRate) {
+        const numSamples = samples.length;
+        const buffer = new ArrayBuffer(44 + numSamples * 2);
+        const view = new DataView(buffer);
+        const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+        const clamp = v => Math.max(-1, Math.min(1, v));
 
-        const ff = new FFmpeg();
-        await ff.load({
-            coreURL: await toBlobURL('https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js', 'text/javascript'),
-            wasmURL: await toBlobURL('https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm', 'application/wasm'),
-        });
-        await ff.writeFile('input', await fetchFile(file));
-        await ff.exec(['-i', 'input', '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', 'output.mp3']);
-        const data = await ff.readFile('output.mp3');
-        return new Blob([data.buffer], { type: 'audio/mp3' });
+        writeStr(0, 'RIFF');
+        view.setUint32(4, 36 + numSamples * 2, true);
+        writeStr(8, 'WAVE');
+        writeStr(12, 'fmt ');
+        view.setUint32(16, 16, true);       // PCM chunk size
+        view.setUint16(20, 1, true);         // PCM format
+        view.setUint16(22, 1, true);         // mono
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true); // byte rate
+        view.setUint16(32, 2, true);         // block align
+        view.setUint16(34, 16, true);        // bits per sample
+        writeStr(36, 'data');
+        view.setUint32(40, numSamples * 2, true);
+        for (let i = 0; i < numSamples; i++) {
+            view.setInt16(44 + i * 2, clamp(samples[i]) * 0x7fff, true);
+        }
+        return new Blob([buffer], { type: 'audio/wav' });
     }
 
     // ── Whisper transcription ──────────────────────────────────────────────────
-    async function transcribeChunk(blob, apiKey, originalName) {
-        const ext = /\.(\w+)$/.exec(originalName)?.[1] || 'mp3';
-        const mimeMap = {
-            mp3: 'audio/mpeg', mp4: 'video/mp4', m4a: 'audio/mp4',
-            wav: 'audio/wav', webm: 'audio/webm', mov: 'video/quicktime',
-            avi: 'video/x-msvideo', ogg: 'audio/ogg', mpga: 'audio/mpeg',
-            mpeg: 'audio/mpeg'
-        };
-        const mime = mimeMap[ext.toLowerCase()] || 'audio/mpeg';
-        const chunkFile = new File([blob], `chunk.${ext}`, { type: mime });
+    // Blobs coming in are always WAV (from decodeAndChunkAudio)
+    async function transcribeChunk(blob, apiKey) {
+        const chunkFile = new File([blob], 'chunk.wav', { type: 'audio/wav' });
 
         const fd = new FormData();
         fd.append('file', chunkFile);
