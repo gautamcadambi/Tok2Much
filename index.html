@@ -5,206 +5,518 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tok2Much | Pro Transcriber</title>
     <script src="coi-serviceworker.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        :root {
+            --bg: #0a0c10;
+            --surface: #111318;
+            --surface2: #181c24;
+            --border: #232830;
+            --border-active: #3b82f6;
+            --text: #e2e8f0;
+            --muted: #64748b;
+            --blue: #3b82f6;
+            --blue-glow: rgba(59,130,246,0.15);
+            --green: #10b981;
+            --green-glow: rgba(16,185,129,0.2);
+            --amber: #f59e0b;
+            --red: #ef4444;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Syne', sans-serif;
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+        body::before {
+            content: '';
+            position: fixed; inset: 0; z-index: 0;
+            background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59,130,246,0.08) 0%, transparent 60%);
+            pointer-events: none;
+        }
+        .wrap {
+            max-width: 860px;
+            margin: 0 auto;
+            position: relative; z-index: 1;
+        }
+        header {
+            display: flex; align-items: baseline; justify-content: space-between;
+            margin-bottom: 2.5rem;
+        }
+        .logo {
+            font-size: 2rem; font-weight: 800; letter-spacing: -0.03em;
+            background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .version {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.7rem; color: var(--muted);
+            letter-spacing: 0.05em;
+        }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .card-label {
+            font-size: 0.65rem; font-weight: 600;
+            letter-spacing: 0.12em; text-transform: uppercase;
+            color: var(--muted); margin-bottom: 0.75rem;
+        }
+        .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        @media(max-width:600px) { .grid2 { grid-template-columns: 1fr; } }
+
+        input[type="password"], input[type="text"] {
+            width: 100%; background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px; padding: 0.75rem 1rem;
+            color: var(--text); font-family: 'Space Mono', monospace;
+            font-size: 0.85rem; outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus { border-color: var(--border-active); }
+
+        .lang-toggle {
+            display: flex; gap: 0.5rem; margin-top: 0.75rem;
+        }
+        .lang-btn {
+            flex: 1; padding: 0.6rem; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--surface2);
+            color: var(--muted); font-family: 'Syne', sans-serif;
+            font-size: 0.85rem; font-weight: 600; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .lang-btn.active {
+            background: var(--blue-glow); border-color: var(--blue);
+            color: var(--blue);
+        }
+
+        .drive-btn {
+            width: 100%; background: #fff; color: #1a1a1a;
+            border: none; border-radius: 10px; padding: 0.75rem 1rem;
+            font-family: 'Syne', sans-serif; font-weight: 700;
+            font-size: 0.9rem; cursor: pointer; transition: all 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+        }
+        .drive-btn:hover { background: #f0f0f0; }
+        .drive-btn.connected {
+            background: #d1fae5; color: #065f46;
+            border: 1px solid #6ee7b7;
+        }
+        .drive-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px; padding: 2rem 1rem;
+            text-align: center; cursor: pointer;
+            transition: all 0.2s; background: var(--surface2);
+            position: relative;
+        }
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: var(--blue); background: var(--blue-glow);
+        }
+        .drop-zone input { display: none; }
+        .drop-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+        .drop-hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.3rem; }
+        .file-pill {
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            background: var(--blue-glow); border: 1px solid var(--blue);
+            color: var(--blue); border-radius: 999px; padding: 0.3rem 0.8rem;
+            font-size: 0.78rem; font-weight: 600; margin-top: 0.5rem;
+        }
+
+        .start-btn {
+            width: 100%; background: linear-gradient(135deg, #059669, #10b981);
+            border: none; border-radius: 12px; padding: 1.1rem;
+            color: #fff; font-family: 'Syne', sans-serif;
+            font-weight: 800; font-size: 1.1rem; cursor: pointer;
+            letter-spacing: 0.02em; transition: all 0.2s;
+            box-shadow: 0 0 30px var(--green-glow);
+            margin-top: 0.5rem;
+        }
+        .start-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 40px var(--green-glow); }
+        .start-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+        #statusBox { display: none; margin-top: 1rem; }
+        .status-bar-wrap {
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 10px; padding: 1rem 1.25rem;
+        }
+        .status-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; }
+        .status-text { font-family: 'Space Mono', monospace; font-size: 0.78rem; color: var(--blue); }
+        .pct { font-family: 'Space Mono', monospace; font-size: 0.78rem; font-weight: 700; color: var(--text); }
+        .progress-track { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; }
+        .progress-fill {
+            height: 100%; width: 0; border-radius: 99px;
+            background: linear-gradient(90deg, var(--blue), var(--green));
+            transition: width 0.5s ease;
+        }
+
+        .output-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+        .output-title { font-size: 1rem; font-weight: 700; }
+        .action-btns { display: flex; gap: 0.5rem; }
+        .act-btn {
+            padding: 0.4rem 0.9rem; border-radius: 8px; border: none;
+            font-family: 'Syne', sans-serif; font-size: 0.78rem; font-weight: 600;
+            cursor: pointer; transition: all 0.15s;
+        }
+        .act-copy { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+        .act-copy:hover { border-color: var(--muted); }
+        .act-dl { background: var(--blue); color: #fff; }
+        .act-dl:hover { background: #2563eb; }
+
+        #transcriptOutput {
+            width: 100%; height: 300px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 10px; padding: 1rem 1.25rem;
+            color: var(--text); font-family: 'Space Mono', monospace;
+            font-size: 0.82rem; line-height: 1.7; resize: vertical;
+            outline: none; transition: border-color 0.2s;
+        }
+        #transcriptOutput:focus { border-color: var(--border-active); }
+
+        .error-box {
+            display: none; margin-top: 0.75rem;
+            background: rgba(239,68,68,0.1); border: 1px solid var(--red);
+            border-radius: 10px; padding: 0.75rem 1rem;
+            font-size: 0.82rem; color: #fca5a5;
+            font-family: 'Space Mono', monospace;
+        }
+
+        .toast {
+            position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+            background: var(--surface); border: 1px solid var(--green);
+            color: var(--green); padding: 0.6rem 1.5rem; border-radius: 999px;
+            font-size: 0.82rem; font-weight: 600; opacity: 0;
+            transition: opacity 0.3s; pointer-events: none; z-index: 999;
+        }
+        .toast.show { opacity: 1; }
+    </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen p-6 md:p-12">
+<body>
+<div class="wrap">
+    <header>
+        <div class="logo">Tok2Much</div>
+        <div class="version">v2.1 · up to 1 GB</div>
+    </header>
 
-    <div class="max-w-4xl mx-auto bg-slate-800 p-8 rounded-3xl shadow-2xl border border-slate-700">
-        <div class="flex justify-between items-center mb-8">
-            <h1 class="text-3xl font-extrabold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Tok2Much</h1>
-            <span class="text-xs font-mono text-slate-500">v2.0 | 1GB Limit</span>
-        </div>
-        
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">1. AI Configuration</label>
-                    <input type="password" id="oaKey" placeholder="OpenAI API Key (sk-...)" class="w-full bg-slate-900 p-3 rounded-xl border border-slate-700 focus:border-blue-500 outline-none transition">
+    <div class="grid2">
+        <!-- Left column -->
+        <div>
+            <div class="card">
+                <div class="card-label">1 · OpenAI API Key</div>
+                <input type="password" id="oaKey" placeholder="sk-..." autocomplete="off">
+                <div class="lang-toggle" style="margin-top:0.9rem;">
+                    <div class="card-label" style="margin-bottom:0;align-self:center;flex-shrink:0;">Language:</div>
+                    <button class="lang-btn active" id="btnEn" onclick="setLang('en')">English</button>
+                    <button class="lang-btn" id="btnHi" onclick="setLang('hi')">हिन्दी</button>
+                    <button class="lang-btn" id="btnAuto" onclick="setLang('auto')">Auto</button>
                 </div>
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">2. Cloud Storage</label>
-                    <button id="authBtn" onclick="handleAuthClick()" class="w-full bg-white text-slate-900 font-bold py-3 rounded-xl hover:bg-slate-200 transition">Connect Google Drive</button>
-                </div>
             </div>
 
-            <div class="border-2 border-dashed border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center bg-slate-900/50 hover:border-blue-500 transition-colors group">
-                <input type="file" id="fileInput" class="hidden" accept=".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm,.mov,.avi">
-                <button onclick="document.getElementById('fileInput').click()" class="bg-blue-600 px-6 py-2 rounded-full font-semibold group-hover:scale-105 transition">Select Media</button>
-                <p id="fileName" class="mt-3 text-sm text-slate-500 italic text-center">Supports MP4, MOV, AVI, MP3 up to 1GB</p>
-            </div>
-        </div>
-
-        <button id="startBtn" onclick="processAll()" class="w-full bg-emerald-600 py-4 rounded-2xl font-bold text-xl hover:bg-emerald-500 shadow-lg shadow-emerald-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all">Start Transcription</button>
-
-        <div id="statusBox" class="mt-8 p-5 bg-slate-950 rounded-2xl border border-slate-800 hidden">
-            <div class="flex justify-between text-sm mb-2">
-                <span id="statusText" class="font-mono text-blue-400">Initializing...</span>
-                <span id="percentText" class="font-bold">0%</span>
-            </div>
-            <div class="w-full bg-slate-800 h-3 rounded-full overflow-hidden">
-                <div id="progressBar" class="bg-gradient-to-r from-blue-500 to-emerald-500 h-full w-0 transition-all duration-500"></div>
+            <div class="card" style="margin-top:0;">
+                <div class="card-label">2 · Google Drive (for large files)</div>
+                <button id="driveBtn" class="drive-btn" onclick="handleDriveAuth()">
+                    <svg viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>
+                    Connect Google Drive
+                </button>
+                <p style="font-size:0.72rem;color:var(--muted);margin-top:0.5rem;line-height:1.5;">
+                    Connect Drive to upload files &gt;25 MB reliably. Small files work without it.
+                </p>
             </div>
         </div>
 
-        <div class="mt-10">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold">Transcription (En/Hi)</h2>
-                <div class="flex gap-3">
-                    <button onclick="copyText()" class="px-4 py-1.5 bg-slate-700 rounded-lg text-sm hover:bg-slate-600 transition">Copy</button>
-                    <button onclick="downloadDoc()" class="px-4 py-1.5 bg-blue-600 rounded-lg text-sm hover:bg-blue-500 transition font-semibold">Download .doc</button>
+        <!-- Right column: file drop -->
+        <div class="card" style="display:flex;flex-direction:column;justify-content:center;">
+            <div class="card-label">3 · Select Media File</div>
+            <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                <input type="file" id="fileInput" accept=".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm,.mov,.avi,.ogg">
+                <div class="drop-icon">🎙️</div>
+                <div style="font-weight:600;font-size:0.9rem;">Click or drag & drop</div>
+                <div class="drop-hint">MP4, MOV, AVI, MP3, WAV, M4A · up to 1 GB</div>
+                <div id="filePill" style="display:none" class="file-pill">
+                    <span>📄</span><span id="fileNameSpan">—</span>
                 </div>
             </div>
-            <textarea id="transcriptOutput" spellcheck="false" class="w-full h-80 bg-slate-950 border border-slate-800 p-6 rounded-2xl text-slate-300 leading-relaxed focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Results will stream here in real-time..."></textarea>
         </div>
     </div>
 
-    <script type="module">
-        import { FFmpeg } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm/ffmpeg.mjs';
-        import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.mjs';
+    <button class="start-btn" id="startBtn" onclick="processAll()">⚡ Start Transcription</button>
 
-        let ffmpeg = null;
-        let googleToken = null;
-        let currentFileId = null;
+    <div id="statusBox">
+        <div class="status-bar-wrap">
+            <div class="status-row">
+                <span class="status-text" id="statusText">Initializing…</span>
+                <span class="pct" id="pctText">0%</span>
+            </div>
+            <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+        </div>
+    </div>
 
-        // 1. Google OAuth Setup
-        window.handleAuthClick = () => {
-            const client = google.accounts.oauth2.initTokenClient({
-                client_id: '368074028095-7m4hqvksdk1rcbnsbj9eeca5fh4odblf.apps.googleusercontent.com',
-                scope: 'https://www.googleapis.com/auth/drive.file',
-                callback: (res) => { 
-                    googleToken = res.access_token; 
-                    document.getElementById('authBtn').innerHTML = "Drive Connected ✅";
-                    document.getElementById('authBtn').classList.add('bg-emerald-100', 'text-emerald-800');
-                }
-            });
-            client.requestAccessToken();
-        };
+    <div id="errorBox" class="error-box"></div>
 
-        // 2. Main Logic
-        window.processAll = async () => {
-            const file = document.getElementById('fileInput').files[0];
-            const apiKey = document.getElementById('oaKey').value;
-            if(!file || !googleToken || !apiKey) return alert("Please provide: API Key, File, and Connect Google Drive!");
+    <div class="card" style="margin-top:1rem;">
+        <div class="output-header">
+            <div class="output-title">Transcription Output</div>
+            <div class="action-btns">
+                <button class="act-btn act-copy" onclick="copyText()">Copy</button>
+                <button class="act-btn act-dl" onclick="downloadDoc()">Download .doc</button>
+            </div>
+        </div>
+        <textarea id="transcriptOutput" placeholder="Results will appear here after transcription…" spellcheck="false"></textarea>
+    </div>
+</div>
 
-            toggleStatus(true);
-            
-            try {
-                // A. Upload to Drive (Resumable)
-                updateStatus("Uploading to Google Drive...", 15);
-                currentFileId = await uploadToDrive(file);
+<div class="toast" id="toast"></div>
 
-                // B. Heavy Lifting: FFmpeg Chunking
-                updateStatus("Optimizing & Chunking Audio (This may take a minute)...", 40);
-                const audioChunks = await chunkAudio(file);
+<script type="module">
+    // ── State ──────────────────────────────────────────────────────────────────
+    let googleToken = null;
+    let selectedFile = null;
+    let selectedLang = 'en';
+    const MAX_CHUNK_BYTES = 24 * 1024 * 1024; // 24 MB (Whisper limit is 25 MB)
 
-                // C. AI Transcription Loop
-                updateStatus("AI Transcribing (Whisper V3)...", 70);
-                let fullText = "";
-                for(let i = 0; i < audioChunks.length; i++) {
-                    const chunkText = await transcribeChunk(audioChunks[i], apiKey);
-                    fullText += chunkText + " ";
-                    document.getElementById('transcriptOutput').value = fullText;
-                    updateStatus(`Transcribing part ${i+1}/${audioChunks.length}...`, 70 + (i * 5));
-                }
+    // ── Lang toggle ────────────────────────────────────────────────────────────
+    window.setLang = (lang) => {
+        selectedLang = lang;
+        document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(lang === 'en' ? 'btnEn' : lang === 'hi' ? 'btnHi' : 'btnAuto').classList.add('active');
+    };
 
-                // D. Cleanup Logic (Delete from Drive)
-                await deleteFileFromDrive(currentFileId);
-                updateStatus("Completed! File deleted from Drive.", 100);
-
-            } catch (err) {
-                console.error(err);
-                updateStatus("Error: " + err.message, 0);
+    // ── Google Drive OAuth ─────────────────────────────────────────────────────
+    window.handleDriveAuth = () => {
+        if (!window.google) { showToast('Google SDK not loaded yet, please wait…'); return; }
+        const client = google.accounts.oauth2.initTokenClient({
+            client_id: '368074028095-7m4hqvksdk1rcbnsbj9eeca5fh4odblf.apps.googleusercontent.com',
+            scope: 'https://www.googleapis.com/auth/drive.file',
+            callback: (res) => {
+                if (res.error) { showError('Drive auth failed: ' + res.error); return; }
+                googleToken = res.access_token;
+                const btn = document.getElementById('driveBtn');
+                btn.innerHTML = `✅ Drive Connected`;
+                btn.classList.add('connected');
             }
-        };
+        });
+        client.requestAccessToken();
+    };
 
-        async function uploadToDrive(file) {
-            const metadata = { name: `transcribe_${Date.now()}_${file.name}`, mimeType: file.type };
-            const initRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${googleToken}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify(metadata)
-            });
-            const uploadUrl = initRes.headers.get('Location');
-            const uploadRes = await fetch(uploadUrl, { method: 'PUT', body: file });
-            const data = await uploadRes.json();
-            return data.id;
-        }
+    // ── File picker / drag-drop ───────────────────────────────────────────────
+    document.getElementById('fileInput').onchange = (e) => setFile(e.target.files[0]);
 
-        async function chunkAudio(file) {
-            if (!ffmpeg) {
-                ffmpeg = new FFmpeg();
-                await ffmpeg.load({
-                    coreURL: await toBlobURL(`https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js`, 'text/javascript'),
-                    wasmURL: await toBlobURL(`https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm`, 'application/wasm'),
-                });
-            }
-            await ffmpeg.writeFile('input', await fetchFile(file));
-            // Convert to 64k mono mp3 for extreme efficiency & split into 10-minute segments
-            await ffmpeg.exec(['-i', 'input', '-f', 'segment', '-segment_time', '600', '-ac', '1', '-b:a', '64k', 'chunk%03d.mp3']);
-            
-            const files = await ffmpeg.listDir('.');
-            const chunks = [];
-            for (let f of files) {
-                if (f.name.endsWith('.mp3')) {
-                    const data = await ffmpeg.readFile(f.name);
-                    chunks.push(new Blob([data.buffer], { type: 'audio/mp3' }));
+    const dz = document.getElementById('dropZone');
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+    dz.addEventListener('drop', (e) => {
+        e.preventDefault(); dz.classList.remove('dragover');
+        const f = e.dataTransfer.files[0];
+        if (f) { document.getElementById('fileInput').files; setFile(f); }
+    });
+
+    function setFile(f) {
+        if (!f) return;
+        if (f.size > 1.05 * 1024 * 1024 * 1024) { showError('File exceeds 1 GB limit.'); return; }
+        selectedFile = f;
+        const pill = document.getElementById('filePill');
+        document.getElementById('fileNameSpan').textContent = truncate(f.name, 28) + ' · ' + fmtSize(f.size);
+        pill.style.display = 'inline-flex';
+        clearError();
+    }
+
+    // ── Main processing ────────────────────────────────────────────────────────
+    window.processAll = async () => {
+        const apiKey = document.getElementById('oaKey').value.trim();
+        if (!apiKey) { showError('Please enter your OpenAI API key (sk-…).'); return; }
+        if (!selectedFile) { showError('Please select a media file first.'); return; }
+        clearError();
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('statusBox').style.display = 'block';
+        document.getElementById('transcriptOutput').value = '';
+
+        try {
+            let fileToChunk = selectedFile;
+            const isVideo = /\.(mp4|mov|avi|webm)$/i.test(selectedFile.name);
+
+            // Step 1: If Drive connected and file > 25 MB, upload to Drive first (optional backup)
+            if (googleToken && selectedFile.size > 25 * 1024 * 1024) {
+                setStatus('Uploading to Google Drive (backup)…', 10);
+                try {
+                    await uploadToDrive(selectedFile);
+                } catch(e) {
+                    console.warn('Drive upload failed, continuing anyway:', e);
                 }
             }
-            return chunks;
-        }
 
-        async function transcribeChunk(blob, key) {
-            const fd = new FormData();
-            fd.append("file", blob, "chunk.mp3");
-            fd.append("model", "whisper-1");
-            const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-                method: "POST",
-                headers: { "Authorization": `Bearer ${key}` },
-                body: fd
-            });
-            const data = await res.json();
-            return data.text || "";
-        }
+            // Step 2: For video, try to extract audio via FFmpeg (with fallback)
+            if (isVideo) {
+                setStatus('Extracting audio from video…', 20);
+                try {
+                    fileToChunk = await extractAudioViaFFmpeg(selectedFile);
+                    setStatus('Audio extracted, preparing chunks…', 30);
+                } catch(e) {
+                    console.warn('FFmpeg failed, sending video directly:', e);
+                    setStatus('Sending video directly (audio extraction skipped)…', 30);
+                }
+            }
 
-        async function deleteFileFromDrive(fileId) {
-            if(!fileId) return;
-            await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${googleToken}` }
-            });
-        }
+            // Step 3: Chunk the file
+            setStatus('Splitting into chunks…', 35);
+            const chunks = chunkBlob(fileToChunk);
+            setStatus(`Processing ${chunks.length} chunk(s)…`, 40);
 
-        // Utilities
-        window.copyText = () => {
-            const text = document.getElementById('transcriptOutput').value;
-            navigator.clipboard.writeText(text);
-            alert("Transcription copied to clipboard!");
+            // Step 4: Transcribe each chunk
+            let fullText = '';
+            for (let i = 0; i < chunks.length; i++) {
+                const pct = 40 + Math.round((i / chunks.length) * 55);
+                setStatus(`Transcribing chunk ${i + 1} of ${chunks.length}…`, pct);
+                const chunkText = await transcribeChunk(chunks[i], apiKey, selectedFile.name);
+                fullText += (fullText ? ' ' : '') + chunkText;
+                document.getElementById('transcriptOutput').value = fullText;
+            }
+
+            setStatus('Done! ✅', 100);
+            showToast('Transcription complete!');
+
+        } catch (err) {
+            console.error(err);
+            showError('Error: ' + err.message);
+            setStatus('Failed.', 0);
+        } finally {
+            document.getElementById('startBtn').disabled = false;
+        }
+    };
+
+    // ── Chunk blob by size (no FFmpeg needed for audio) ────────────────────────
+    function chunkBlob(blob) {
+        const chunks = [];
+        let offset = 0;
+        while (offset < blob.size) {
+            chunks.push(blob.slice(offset, offset + MAX_CHUNK_BYTES));
+            offset += MAX_CHUNK_BYTES;
+        }
+        return chunks;
+    }
+
+    // ── FFmpeg audio extraction (optional, graceful fallback) ──────────────────
+    async function extractAudioViaFFmpeg(file) {
+        const { FFmpeg } = await import('https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm/ffmpeg.mjs');
+        const { fetchFile, toBlobURL } = await import('https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.mjs');
+
+        const ff = new FFmpeg();
+        await ff.load({
+            coreURL: await toBlobURL('https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js', 'text/javascript'),
+            wasmURL: await toBlobURL('https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm', 'application/wasm'),
+        });
+        await ff.writeFile('input', await fetchFile(file));
+        await ff.exec(['-i', 'input', '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', 'output.mp3']);
+        const data = await ff.readFile('output.mp3');
+        return new Blob([data.buffer], { type: 'audio/mp3' });
+    }
+
+    // ── Whisper transcription ──────────────────────────────────────────────────
+    async function transcribeChunk(blob, apiKey, originalName) {
+        const ext = /\.(\w+)$/.exec(originalName)?.[1] || 'mp3';
+        const mimeMap = {
+            mp3: 'audio/mpeg', mp4: 'video/mp4', m4a: 'audio/mp4',
+            wav: 'audio/wav', webm: 'audio/webm', mov: 'video/quicktime',
+            avi: 'video/x-msvideo', ogg: 'audio/ogg', mpga: 'audio/mpeg',
+            mpeg: 'audio/mpeg'
         };
+        const mime = mimeMap[ext.toLowerCase()] || 'audio/mpeg';
+        const chunkFile = new File([blob], `chunk.${ext}`, { type: mime });
 
-        window.downloadDoc = () => {
-            const content = document.getElementById('transcriptOutput').value;
-            const preHtml = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body>";
-            const postHtml = "</body></html>";
-            const html = preHtml + content.replace(/\n/g, '<br>') + postHtml;
-            const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `Transcription_${new Date().toLocaleDateString()}.doc`;
-            link.click();
-        };
+        const fd = new FormData();
+        fd.append('file', chunkFile);
+        fd.append('model', 'whisper-1');
+        if (selectedLang !== 'auto') fd.append('language', selectedLang);
+        fd.append('response_format', 'text');
 
-        function updateStatus(text, percent) {
-            document.getElementById('statusText').innerText = text;
-            document.getElementById('percentText').innerText = percent + "%";
-            document.getElementById('progressBar').style.width = percent + "%";
+        const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}` },
+            body: fd
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err?.error?.message || `Whisper API error ${res.status}`);
         }
-        function toggleStatus(show) { document.getElementById('statusBox').classList.toggle('hidden', !show); }
-        
-        document.getElementById('fileInput').onchange = (e) => {
-            document.getElementById('fileName').innerText = e.target.files[0].name;
-        };
-    </script>
+        // response_format=text returns plain text directly
+        return await res.text();
+    }
+
+    // ── Google Drive upload (resumable, handles large files) ──────────────────
+    async function uploadToDrive(file) {
+        const metadata = { name: `tok2much_${Date.now()}_${file.name}`, mimeType: file.type || 'application/octet-stream' };
+        const initRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${googleToken}`,
+                'Content-Type': 'application/json',
+                'X-Upload-Content-Type': file.type || 'application/octet-stream',
+                'X-Upload-Content-Length': file.size
+            },
+            body: JSON.stringify(metadata)
+        });
+        if (!initRes.ok) throw new Error('Drive upload init failed: ' + initRes.status);
+        const uploadUrl = initRes.headers.get('Location');
+        if (!uploadUrl) throw new Error('No resumable upload URL returned');
+
+        const uploadRes = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': file.type || 'application/octet-stream', 'Content-Length': file.size },
+            body: file
+        });
+        if (!uploadRes.ok) throw new Error('Drive upload failed: ' + uploadRes.status);
+        return await uploadRes.json();
+    }
+
+    // ── Utilities ──────────────────────────────────────────────────────────────
+    window.copyText = () => {
+        const t = document.getElementById('transcriptOutput').value;
+        if (!t) { showToast('Nothing to copy yet.'); return; }
+        navigator.clipboard.writeText(t).then(() => showToast('Copied to clipboard!'));
+    };
+
+    window.downloadDoc = () => {
+        const content = document.getElementById('transcriptOutput').value;
+        if (!content) { showToast('Nothing to download yet.'); return; }
+        const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><style>body{font-family:Calibri,sans-serif;font-size:12pt;line-height:1.6;}</style></head><body>${content.replace(/\n/g, '<br>')}</body></html>`;
+        const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `Transcription_${new Date().toISOString().slice(0,10)}.doc`;
+        a.click();
+    };
+
+    function setStatus(text, pct) {
+        document.getElementById('statusText').textContent = text;
+        document.getElementById('pctText').textContent = pct + '%';
+        document.getElementById('progressFill').style.width = pct + '%';
+    }
+    function showError(msg) {
+        const b = document.getElementById('errorBox');
+        b.textContent = '⚠ ' + msg;
+        b.style.display = 'block';
+    }
+    function clearError() { document.getElementById('errorBox').style.display = 'none'; }
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg; t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 2500);
+    }
+    function fmtSize(b) {
+        if (b > 1e9) return (b/1e9).toFixed(1) + ' GB';
+        if (b > 1e6) return (b/1e6).toFixed(1) + ' MB';
+        return (b/1e3).toFixed(0) + ' KB';
+    }
+    function truncate(s, n) { return s.length > n ? s.slice(0, n-1) + '…' : s; }
+
+</script>
 </body>
 </html>
