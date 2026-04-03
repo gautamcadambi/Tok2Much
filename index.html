@@ -203,7 +203,7 @@
 <div class="wrap">
     <header>
         <div class="logo">Tok2Much</div>
-        <div class="version">v2.1 · up to 1 GB</div>
+        <div class="version">v2.2 · up to 1 GB</div>
     </header>
 
     <div class="grid2">
@@ -338,25 +338,18 @@
         document.getElementById('transcriptOutput').value = '';
 
         try {
-            // Step 1: Optional Drive backup for large files
-            if (googleToken && selectedFile.size > 25 * 1024 * 1024) {
-                setStatus('Uploading to Google Drive (backup)…', 5);
-                try { await uploadToDrive(selectedFile); }
-                catch(e) { console.warn('Drive upload failed, continuing:', e); }
-            }
+            setStatus('Capturing audio stream from file…', 5);
 
-            // Step 2: Decode audio from any video/audio file using Web Audio API
-            setStatus('Decoding audio from file…', 10);
-            const audioChunks = await decodeAndChunkAudio(selectedFile);
-            setStatus(`Audio decoded → ${audioChunks.length} chunk(s) to transcribe`, 30);
+            // Stream audio via MediaRecorder — never loads full file into RAM
+            const chunks = await captureAudioChunksViaMediaRecorder(selectedFile);
+            setStatus(`Captured ${chunks.length} chunk(s), starting transcription…`, 30);
 
-            // Step 3: Transcribe each chunk
             let fullText = '';
-            for (let i = 0; i < audioChunks.length; i++) {
-                const pct = 30 + Math.round((i / audioChunks.length) * 65);
-                setStatus(`Transcribing chunk ${i + 1} of ${audioChunks.length}…`, pct);
-                const chunkText = await transcribeChunk(audioChunks[i], apiKey);
-                fullText += (fullText ? ' ' : '') + chunkText;
+            for (let i = 0; i < chunks.length; i++) {
+                const pct = 30 + Math.round((i / chunks.length) * 65);
+                setStatus(`Transcribing chunk ${i + 1} of ${chunks.length}…`, pct);
+                const text = await transcribeChunk(chunks[i], apiKey);
+                fullText += (fullText ? ' ' : '') + text;
                 document.getElementById('transcriptOutput').value = fullText;
             }
 
@@ -372,79 +365,120 @@
         }
     };
 
-    // ── Decode audio via Web Audio API, re-encode as WAV chunks ───────────────
-    // This works for MP4, MOV, AVI, MP3, WAV, M4A — anything the browser can decode.
-    // No FFmpeg / SharedArrayBuffer / WASM needed.
-    async function decodeAndChunkAudio(file) {
-        setStatus('Reading file into memory…', 12);
-        const arrayBuffer = await file.arrayBuffer();
+    // ── Stream audio via hidden <video> + Web Audio + MediaRecorder ────────────
+    // Never loads the full file into RAM. Plays the file at 16x speed (muted),
+    // captures the decoded audio stream in 10-minute segments, discards each
+    // segment from memory once sent to Whisper.
+    function captureAudioChunksViaMediaRecorder(file) {
+        return new Promise((resolve, reject) => {
+            const CHUNK_DURATION_MS = 10 * 60 * 1000; // 10 minutes per chunk
 
-        setStatus('Decoding audio (this may take a moment for large files)…', 18);
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        let audioBuffer;
-        try {
-            audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        } catch(e) {
-            await audioCtx.close();
-            throw new Error('Browser could not decode this file. Try converting to MP3 or WAV first. Details: ' + e.message);
-        }
-        await audioCtx.close();
+            // Create hidden video element to stream the file
+            const video = document.createElement('video');
+            video.src = URL.createObjectURL(file);
+            video.muted = true;       // must be muted to avoid speaker output
+            video.playbackRate = 16;  // play at 16x — captures faster, same audio
+            video.style.display = 'none';
+            document.body.appendChild(video);
 
-        // Mix down to mono Float32 PCM at 16kHz
-        const sampleRate = audioBuffer.sampleRate; // already 16000 if context was 16k
-        const numChannels = audioBuffer.numberOfChannels;
-        const length = audioBuffer.length;
+            // Wire up Web Audio to capture the decoded stream
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioCtx.createMediaElementSource(video);
 
-        // Mono mix
-        const mono = new Float32Array(length);
-        for (let ch = 0; ch < numChannels; ch++) {
-            const channelData = audioBuffer.getChannelData(ch);
-            for (let i = 0; i < length; i++) mono[i] += channelData[i] / numChannels;
-        }
+            // ScriptProcessor to get access to the stream without loading into RAM
+            const dest = audioCtx.createMediaStreamDestination();
+            source.connect(dest);
+            // Also connect to audioCtx.destination so browser allows playback
+            source.connect(audioCtx.destination);
 
-        // Split into ~10-minute segments (10 * 60 * 16000 samples)
-        const CHUNK_SAMPLES = 10 * 60 * sampleRate;
-        const chunks = [];
-        let offset = 0;
-        while (offset < mono.length) {
-            const slice = mono.slice(offset, offset + CHUNK_SAMPLES);
-            chunks.push(float32ToWavBlob(slice, sampleRate));
-            offset += CHUNK_SAMPLES;
-        }
-        return chunks;
-    }
+            // Pick best supported format for Whisper (webm/opus or ogg/opus)
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
+                ? 'audio/ogg;codecs=opus'
+                : 'audio/webm';
 
-    // ── Convert Float32 PCM → WAV Blob (Whisper loves WAV) ────────────────────
-    function float32ToWavBlob(samples, sampleRate) {
-        const numSamples = samples.length;
-        const buffer = new ArrayBuffer(44 + numSamples * 2);
-        const view = new DataView(buffer);
-        const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
-        const clamp = v => Math.max(-1, Math.min(1, v));
+            const allChunks = [];
+            let recorder = null;
+            let chunkIndex = 0;
+            let currentParts = [];
+            let totalDuration = 0;
 
-        writeStr(0, 'RIFF');
-        view.setUint32(4, 36 + numSamples * 2, true);
-        writeStr(8, 'WAVE');
-        writeStr(12, 'fmt ');
-        view.setUint32(16, 16, true);       // PCM chunk size
-        view.setUint16(20, 1, true);         // PCM format
-        view.setUint16(22, 1, true);         // mono
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * 2, true); // byte rate
-        view.setUint16(32, 2, true);         // block align
-        view.setUint16(34, 16, true);        // bits per sample
-        writeStr(36, 'data');
-        view.setUint32(40, numSamples * 2, true);
-        for (let i = 0; i < numSamples; i++) {
-            view.setInt16(44 + i * 2, clamp(samples[i]) * 0x7fff, true);
-        }
-        return new Blob([buffer], { type: 'audio/wav' });
+            function startNewRecorder() {
+                currentParts = [];
+                recorder = new MediaRecorder(dest.stream, { mimeType, audioBitsPerSecond: 64000 });
+                recorder.ondataavailable = (e) => { if (e.data.size > 0) currentParts.push(e.data); };
+                recorder.onstop = () => {
+                    const blob = new Blob(currentParts, { type: mimeType });
+                    allChunks.push(blob);
+                    currentParts = [];
+                    chunkIndex++;
+                    const pct = totalDuration > 0
+                        ? Math.min(28, Math.round((chunkIndex * CHUNK_DURATION_MS / totalDuration) * 28))
+                        : 15;
+                    setStatus(`Captured chunk ${chunkIndex}…`, 5 + pct);
+                };
+                recorder.start();
+            }
+
+            video.onloadedmetadata = () => {
+                totalDuration = video.duration * 1000; // ms
+                // Estimate how many chunks (based on real duration, not playback speed)
+                const estChunks = Math.ceil(totalDuration / CHUNK_DURATION_MS);
+                setStatus(`File duration ~${Math.round(totalDuration/60000)} min → ~${estChunks} chunk(s)`, 8);
+
+                startNewRecorder();
+
+                // Rotate recorder every CHUNK_DURATION_MS of REAL audio time
+                // At 16x playback, that's CHUNK_DURATION_MS/16 of clock time
+                const rotateEveryMs = CHUNK_DURATION_MS / video.playbackRate;
+                const rotateInterval = setInterval(() => {
+                    if (video.ended || video.paused) return;
+                    recorder.stop();
+                    startNewRecorder();
+                }, rotateEveryMs);
+
+                video.onended = () => {
+                    clearInterval(rotateInterval);
+                    if (recorder && recorder.state !== 'inactive') {
+                        recorder.onstop = () => {
+                            const blob = new Blob(currentParts, { type: mimeType });
+                            if (blob.size > 1000) allChunks.push(blob);
+                            // Cleanup
+                            audioCtx.close();
+                            URL.revokeObjectURL(video.src);
+                            document.body.removeChild(video);
+                            resolve(allChunks);
+                        };
+                        recorder.stop();
+                    } else {
+                        audioCtx.close();
+                        URL.revokeObjectURL(video.src);
+                        document.body.removeChild(video);
+                        resolve(allChunks);
+                    }
+                };
+
+                video.onerror = (e) => {
+                    clearInterval(rotateInterval);
+                    audioCtx.close();
+                    URL.revokeObjectURL(video.src);
+                    document.body.removeChild(video);
+                    reject(new Error('Browser could not play this file. Try MP3 or WAV format.'));
+                };
+
+                video.play().catch(reject);
+            };
+
+            video.onerror = () => reject(new Error('Could not load media file. Try MP3 or WAV format.'));
+        });
     }
 
     // ── Whisper transcription ──────────────────────────────────────────────────
-    // Blobs coming in are always WAV (from decodeAndChunkAudio)
     async function transcribeChunk(blob, apiKey) {
-        const chunkFile = new File([blob], 'chunk.wav', { type: 'audio/wav' });
+        // Use extension that matches the blob's mime type
+        const ext = blob.type.includes('ogg') ? 'ogg' : 'webm';
+        const chunkFile = new File([blob], `chunk.${ext}`, { type: blob.type });
 
         const fd = new FormData();
         fd.append('file', chunkFile);
