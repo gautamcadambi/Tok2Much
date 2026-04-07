@@ -10,129 +10,38 @@
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
-            --bg: #0a0c10;
-            --surface: #111318;
-            --surface2: #181c24;
-            --border: #232830;
-            --border-active: #3b82f6;
-            --text: #e2e8f0;
-            --muted: #64748b;
-            --blue: #3b82f6;
-            --blue-glow: rgba(59,130,246,0.15);
-            --green: #10b981;
-            --green-glow: rgba(16,185,129,0.2);
-            --amber: #f59e0b;
-            --red: #ef4444;
+            --bg: #0a0c10; --surface: #111318; --surface2: #181c24;
+            --border: #232830; --border-active: #3b82f6; --text: #e2e8f0;
+            --muted: #64748b; --blue: #3b82f6; --blue-glow: rgba(59,130,246,0.15);
+            --green: #10b981; --green-glow: rgba(16,185,129,0.2); --red: #ef4444;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'Syne', sans-serif;
-            min-height: 100vh;
-            padding: 2rem 1rem;
-        }
-        body::before {
-            content: '';
-            position: fixed; inset: 0; z-index: 0;
-            background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59,130,246,0.08) 0%, transparent 60%);
-            pointer-events: none;
-        }
-        .wrap {
-            max-width: 860px;
-            margin: 0 auto;
-            position: relative; z-index: 1;
-        }
-        header {
-            display: flex; align-items: baseline; justify-content: space-between;
-            margin-bottom: 2.5rem;
-        }
-        .logo {
-            font-size: 2rem; font-weight: 800; letter-spacing: -0.03em;
-            background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
-            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        }
-        .version {
-            font-family: 'Space Mono', monospace;
-            font-size: 0.7rem; color: var(--muted);
-            letter-spacing: 0.05em;
-        }
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 1.5rem;
-            margin-bottom: 1rem;
-        }
-        .card-label {
-            font-size: 0.65rem; font-weight: 600;
-            letter-spacing: 0.12em; text-transform: uppercase;
-            color: var(--muted); margin-bottom: 0.75rem;
-        }
+        body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; min-height: 100vh; padding: 2rem 1rem; }
+        .wrap { max-width: 860px; margin: 0 auto; position: relative; z-index: 1; }
+        header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 2rem; }
+        .logo { font-size: 2rem; font-weight: 800; background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1rem; }
+        .card-label { font-size: 0.65rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.75rem; }
         .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
         @media(max-width:600px) { .grid2 { grid-template-columns: 1fr; } }
-
-        input[type="password"] {
-            width: 100%; background: var(--surface2);
-            border: 1px solid var(--border);
-            border-radius: 10px; padding: 0.75rem 1rem;
-            color: var(--text); font-family: 'Space Mono', monospace;
-            font-size: 0.85rem; outline: none;
-        }
+        input[type="password"] { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem 1rem; color: var(--text); font-family: 'Space Mono', monospace; outline: none; }
         .lang-toggle { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
-        .lang-btn {
-            flex: 1; padding: 0.6rem; border-radius: 8px;
-            border: 1px solid var(--border); background: var(--surface2);
-            color: var(--muted); font-size: 0.85rem; font-weight: 600; cursor: pointer;
-        }
+        .lang-btn { flex: 1; padding: 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); cursor: pointer; font-weight: 600; }
         .lang-btn.active { background: var(--blue-glow); border-color: var(--blue); color: var(--blue); }
-
-        .drive-btn {
-            width: 100%; background: #fff; color: #1a1a1a;
-            border-radius: 10px; padding: 0.75rem 1rem;
-            font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-        }
+        .drive-btn { width: 100%; background: #fff; color: #1a1a1a; border-radius: 10px; padding: 0.75rem; font-weight: 700; cursor: pointer; border: none; }
         .drive-btn.connected { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
-
-        .drop-zone {
-            border: 2px dashed var(--border);
-            border-radius: 12px; padding: 2rem 1rem;
-            text-align: center; cursor: pointer; background: var(--surface2);
-        }
-        .drop-zone.dragover { border-color: var(--blue); background: var(--blue-glow); }
-        .file-pill {
-            display: inline-flex; align-items: center; gap: 0.4rem;
-            background: var(--blue-glow); border: 1px solid var(--blue);
-            color: var(--blue); border-radius: 999px; padding: 0.3rem 0.8rem;
-            font-size: 0.78rem; font-weight: 600; margin-top: 0.5rem;
-        }
-
-        .start-btn {
-            width: 100%; background: linear-gradient(135deg, #059669, #10b981);
-            border-radius: 12px; padding: 1.1rem; color: #fff; font-weight: 800; font-size: 1.1rem;
-            cursor: pointer; box-shadow: 0 0 30px var(--green-glow); margin-top: 0.5rem; border: none;
-        }
+        .drop-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 2rem 1rem; text-align: center; cursor: pointer; background: var(--surface2); }
+        .file-pill { display: inline-flex; align-items: center; gap: 0.4rem; background: var(--blue-glow); border: 1px solid var(--blue); color: var(--blue); border-radius: 999px; padding: 0.3rem 0.8rem; font-size: 0.78rem; margin-top: 0.5rem; }
+        .start-btn { width: 100%; background: linear-gradient(135deg, #059669, #10b981); border-radius: 12px; padding: 1.1rem; color: #fff; font-weight: 800; font-size: 1.1rem; cursor: pointer; border: none; margin-top: 0.5rem; }
         .start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
         #statusBox { display: none; margin-top: 1rem; }
-        .status-bar-wrap { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; }
-        .status-row { display: flex; justify-content: space-between; margin-bottom: 0.6rem; }
-        .status-text { font-family: 'Space Mono', monospace; font-size: 0.78rem; color: var(--blue); }
-        .progress-track { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; }
-        .progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--blue), var(--green)); transition: width 0.4s; }
-
-        #transcriptOutput {
-            width: 100%; height: 350px; background: var(--surface2); border: 1px solid var(--border);
-            border-radius: 10px; padding: 1.25rem; color: var(--text); font-family: 'Space Mono', monospace;
-            font-size: 0.85rem; line-height: 1.7; outline: none;
-        }
-        .action-btns { display: flex; gap: 0.5rem; }
-        .act-btn { padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.78rem; font-weight: 600; cursor: pointer; border: none; }
-        .act-copy { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
-        .act-dl { background: var(--blue); color: #fff; }
+        .status-bar-wrap { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
+        .progress-track { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+        .progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--blue), var(--green)); transition: width 0.3s; }
+        #transcriptOutput { width: 100%; height: 350px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; color: var(--text); font-family: 'Space Mono', monospace; font-size: 0.85rem; line-height: 1.7; outline: none; margin-top: 10px; }
         .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--green); color: var(--green); padding: 0.6rem 1.5rem; border-radius: 999px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
         .toast.show { opacity: 1; }
-        .error-box { display: none; margin-top: 0.75rem; background: rgba(239,68,68,0.1); border: 1px solid var(--red); border-radius: 10px; padding: 0.75rem 1rem; color: #fca5a5; font-size: 0.82rem; }
+        .error-box { display: none; margin-top: 0.75rem; background: rgba(239,68,68,0.1); border: 1px solid var(--red); border-radius: 10px; padding: 0.75rem; color: #fca5a5; font-size: 0.82rem; }
     </style>
 </head>
 <body>
@@ -140,46 +49,43 @@
 <div class="wrap">
     <header>
         <div class="logo">Tok2Much</div>
-        <div class="version">v2.5 · 1 GB Pro</div>
+        <div class="version">v2.6 · Final Build</div>
     </header>
 
     <div class="grid2">
-        <div>
-            <div class="card">
-                <div class="card-label">1 · OpenAI API Key</div>
-                <input type="password" id="oaKey" placeholder="sk-...">
-                <div class="lang-toggle">
-                    <button class="lang-btn active" id="btnEn" onclick="setLang('en')">English</button>
-                    <button class="lang-btn" id="btnHi" onclick="setLang('hi')">हिन्दी</button>
-                    <button class="lang-btn" id="btnAuto" onclick="setLang('auto')">Auto</button>
-                </div>
-            </div>
-            <div class="card">
-                <div class="card-label">2 · Google Drive (Storage)</div>
-                <button id="driveBtn" class="drive-btn" onclick="handleDriveAuth()">Connect Google Drive</button>
-                <p style="font-size:0.7rem;color:var(--muted);margin-top:0.5rem;">Required for files over 25MB.</p>
+        <div class="card">
+            <div class="card-label">1 · Config</div>
+            <input type="password" id="oaKey" placeholder="Paste OpenAI Key (sk-...)">
+            <div class="lang-toggle">
+                <button class="lang-btn active" data-lang="en">English</button>
+                <button class="lang-btn" data-lang="hi">हिन्दी</button>
+                <button class="lang-btn" data-lang="auto">Auto</button>
             </div>
         </div>
-        <div class="card" style="display:flex;flex-direction:column;justify-content:center;">
-            <div class="card-label">3 · Media File</div>
-            <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
-                <input type="file" id="fileInput" class="hidden" accept="video/*,audio/*">
-                <div style="font-size: 2rem;">🎙️</div>
-                <div style="font-weight:600;">Select or Drop File</div>
-                <div id="filePill" style="display:none" class="file-pill">
-                    <span id="fileNameSpan">No file</span>
-                </div>
-            </div>
+        <div class="card">
+            <div class="card-label">2 · Cloud</div>
+            <button id="driveBtn" class="drive-btn">Connect Google Drive</button>
+            <p style="font-size:0.65rem; color:var(--muted); margin-top:8px;">Used for handling 1GB files and cleanup.</p>
         </div>
     </div>
 
-    <button class="start-btn" id="startBtn" onclick="processAll()">⚡ Start Transcription</button>
+    <div class="card">
+        <div class="card-label">3 · Media</div>
+        <div class="drop-zone" id="dropZone">
+            <input type="file" id="fileInput" hidden accept="video/*,audio/*">
+            <div style="font-size:1.5rem;">🎙️</div>
+            <div style="font-weight:600; font-size:0.9rem;">Select Media (Up to 1GB)</div>
+            <div id="filePill" style="display:none" class="file-pill"><span id="fileNameSpan"></span></div>
+        </div>
+    </div>
+
+    <button class="start-btn" id="startBtn">⚡ Start Transcription</button>
 
     <div id="statusBox">
         <div class="status-bar-wrap">
-            <div class="status-row">
-                <span class="status-text" id="statusText">Initializing...</span>
-                <span id="pctText" style="font-size:0.75rem; font-weight:bold;">0%</span>
+            <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+                <span id="statusText" class="status-text">Ready...</span>
+                <span id="pctText">0%</span>
             </div>
             <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
         </div>
@@ -188,46 +94,47 @@
     <div id="errorBox" class="error-box"></div>
 
     <div class="card" style="margin-top:1rem;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:1rem; align-items:center;">
-            <div class="card-label" style="margin:0;">Transcription Output</div>
-            <div class="action-btns">
-                <button class="act-btn act-copy" onclick="copyText()">Copy</button>
-                <button class="act-btn act-dl" onclick="downloadDoc()">Download .doc</button>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="card-label" style="margin:0;">Transcript</div>
+            <div style="display:flex; gap:8px;">
+                <button class="act-btn" id="copyBtn" style="background:var(--surface2); color:var(--text); border:1px solid var(--border); padding:4px 10px; border-radius:6px; cursor:pointer; font-size:0.7rem;">Copy</button>
+                <button class="act-btn" id="dlBtn" style="background:var(--blue); color:white; border:none; padding:4px 10px; border-radius:6px; cursor:pointer; font-size:0.7rem;">Download .doc</button>
             </div>
         </div>
-        <textarea id="transcriptOutput" readonly placeholder="Thorough transcription will appear here..."></textarea>
+        <textarea id="transcriptOutput" readonly placeholder="Output will stream here..."></textarea>
     </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script type="module">
-    import { FFmpeg } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm/ffmpeg.mjs';
-    import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.mjs';
+    import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.7/+esm';
+    import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/+esm';
 
     let ffmpeg = null;
     let googleToken = null;
     let selectedFile = null;
     let selectedLang = 'en';
 
-    window.setLang = (l) => {
-        selectedLang = l;
-        document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById(l === 'en' ? 'btnEn' : l === 'hi' ? 'btnHi' : 'btnAuto').classList.add('active');
-    };
+    // ── Pre-flight check for COI ─────────────────────────────────────────────
+    if (!window.crossOriginIsolated) {
+        console.warn("COI Not Active. FFmpeg might fail. Ensure coi-serviceworker.js is in repo.");
+    }
 
-    window.handleDriveAuth = () => {
-        const client = google.accounts.oauth2.initTokenClient({
-            client_id: '368074028095-7m4hqvksdk1rcbnsbj9eeca5fh4odblf.apps.googleusercontent.com',
-            scope: 'https://www.googleapis.com/auth/drive.file',
-            callback: (res) => {
-                googleToken = res.access_token;
-                document.getElementById('driveBtn').innerText = "✅ Drive Connected";
-                document.getElementById('driveBtn').classList.add('connected');
-            }
-        });
-        client.requestAccessToken();
-    };
+    // ── Event Listeners (Fixes Scoping) ──────────────────────────────────────
+    document.getElementById('driveBtn').onclick = handleDriveAuth;
+    document.getElementById('startBtn').onclick = processAll;
+    document.getElementById('dropZone').onclick = () => document.getElementById('fileInput').click();
+    document.getElementById('copyBtn').onclick = copyText;
+    document.getElementById('dlBtn').onclick = downloadDoc;
+    
+    document.querySelectorAll('.lang-btn').forEach(btn => {
+        btn.onclick = () => {
+            selectedLang = btn.dataset.lang;
+            document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        };
+    });
 
     document.getElementById('fileInput').onchange = (e) => {
         selectedFile = e.target.files[0];
@@ -237,75 +144,83 @@
         }
     };
 
-    window.processAll = async () => {
-        const apiKey = document.getElementById('oaKey').value;
-        if (!selectedFile || !apiKey) return alert("File and API Key required!");
+    // ── Main Functions ───────────────────────────────────────────────────────
+    async function handleDriveAuth() {
+        if (!window.google) return alert("Google script not loaded. Check connection.");
+        const client = google.accounts.oauth2.initTokenClient({
+            client_id: '368074028095-7m4hqvksdk1rcbnsbj9eeca5fh4odblf.apps.googleusercontent.com',
+            scope: 'https://www.googleapis.com/auth/drive.file',
+            callback: (res) => {
+                if (res.access_token) {
+                    googleToken = res.access_token;
+                    document.getElementById('driveBtn').innerText = "✅ Drive Connected";
+                    document.getElementById('driveBtn').classList.add('connected');
+                }
+            }
+        });
+        client.requestAccessToken();
+    }
+
+    async function processAll() {
+        const apiKey = document.getElementById('oaKey').value.trim();
+        if (!selectedFile || !apiKey) return alert("Missing API Key or File!");
 
         document.getElementById('startBtn').disabled = true;
         document.getElementById('statusBox').style.display = 'block';
-        document.getElementById('transcriptOutput').value = '';
-        
+        document.getElementById('errorBox').style.display = 'none';
+
         try {
-            // 1. Storage & Backup
             let driveId = null;
             if (googleToken) {
-                setStatus("Backing up to Google Drive...", 10);
+                setStatus("Uploading to Drive...", 10);
                 driveId = await uploadToDrive(selectedFile);
             }
 
-            // 2. FFmpeg Extraction
             if (!ffmpeg) {
-                setStatus("Loading AI Processor...", 20);
+                setStatus("Waking up AI...", 20);
                 ffmpeg = new FFmpeg();
                 await ffmpeg.load({
-                    coreURL: await toBlobURL(`https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js`, 'text/javascript'),
-                    wasmURL: await toBlobURL(`https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm`, 'application/wasm'),
+                    coreURL: await toBlobURL('https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js', 'text/javascript'),
+                    wasmURL: await toBlobURL('https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm', 'application/wasm'),
                 });
             }
 
-            setStatus("Extracting audio stream...", 35);
+            setStatus("Extracting audio...", 35);
             await ffmpeg.writeFile('input', await fetchFile(selectedFile));
-            // Chunking into 10min segments, Mono, 64k for efficiency
             await ffmpeg.exec(['-i', 'input', '-f', 'segment', '-segment_time', '600', '-ac', '1', '-b:a', '64k', 'out%03d.mp3']);
 
             const files = await ffmpeg.listDir('.');
-            const chunks = [];
-            for (let f of files) {
-                if (f.name.endsWith('.mp3')) {
-                    const data = await ffmpeg.readFile(f.name);
-                    chunks.push(new Blob([data.buffer], { type: 'audio/mp3' }));
-                }
+            const chunkNames = files.filter(f => f.name.endsWith('.mp3')).map(f => f.name);
+
+            let fullText = "";
+            for (let i = 0; i < chunkNames.length; i++) {
+                setStatus(`Transcribing part ${i+1}/${chunkNames.length}...`, 40 + Math.round((i/chunkNames.length)*50));
+                const data = await ffmpeg.readFile(chunkNames[i]);
+                const blob = new Blob([data.buffer], { type: 'audio/mp3' });
+                const text = await transcribeChunk(blob, apiKey);
+                fullText += text + " ";
+                document.getElementById('transcriptOutput').value = fullText;
             }
 
-            // 3. AI Transcription
-            let fullTranscript = "";
-            for (let i = 0; i < chunks.length; i++) {
-                const step = 40 + Math.round((i / chunks.length) * 50);
-                setStatus(`Transcribing part ${i+1}/${chunks.length}...`, step);
-                const text = await transcribeChunk(chunks[i], apiKey);
-                fullTranscript += text + " ";
-                document.getElementById('transcriptOutput').value = fullTranscript;
-            }
-
-            // 4. Cleanup
             if (driveId) {
-                setStatus("Cleaning up Drive...", 95);
+                setStatus("Cleanup...", 95);
                 await deleteFromDrive(driveId);
             }
-            
-            setStatus("Complete! ✅", 100);
-            showToast("Success!");
+
+            setStatus("Success! ✅", 100);
+            showToast("Transcription Complete!");
 
         } catch (e) {
+            console.error(e);
             document.getElementById('errorBox').innerText = "Error: " + e.message;
             document.getElementById('errorBox').style.display = 'block';
         } finally {
             document.getElementById('startBtn').disabled = false;
         }
-    };
+    }
 
     async function uploadToDrive(file) {
-        const metadata = { name: file.name, mimeType: file.type };
+        const metadata = { name: `tok_${Date.now()}_${file.name}`, mimeType: file.type };
         const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${googleToken}`, 'Content-Type': 'application/json' },
@@ -328,6 +243,7 @@
             headers: { 'Authorization': `Bearer ${key}` },
             body: fd
         });
+        if (!res.ok) throw new Error("Whisper API Failed. Check Key/Balance.");
         return await res.text();
     }
 
@@ -344,21 +260,20 @@
         document.getElementById('progressFill').style.width = p + "%";
     }
 
-    window.copyText = () => {
+    function copyText() {
         navigator.clipboard.writeText(document.getElementById('transcriptOutput').value);
         showToast("Copied!");
-    };
+    }
 
-    window.downloadDoc = () => {
+    function downloadDoc() {
         const content = document.getElementById('transcriptOutput').value;
-        const html = `<html><head><meta charset='utf-8'></head><body>${content.replace(/\n/g, '<br>')}</body></html>`;
-        const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+        const blob = new Blob([content], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = "Tok2Much_Transcript.doc";
+        a.download = "Tok2Much_Transcript.txt";
         a.click();
-    };
+    }
 
     function showToast(m) {
         const t = document.getElementById('toast');
