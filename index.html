@@ -30,7 +30,7 @@
         .lang-btn.active { background: var(--blue-glow); border-color: var(--blue); color: var(--blue); }
         .drive-btn { width: 100%; background: #fff; color: #1a1a1a; border-radius: 10px; padding: 0.75rem; font-weight: 700; cursor: pointer; border: none; }
         .drive-btn.connected { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
-        .drop-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 2rem 1rem; text-align: center; cursor: pointer; background: var(--surface2); }
+        .drop-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 2rem 1rem; text-align: center; cursor: pointer; background: var(--surface2); position: relative; }
         .file-pill { display: inline-flex; align-items: center; gap: 0.4rem; background: var(--blue-glow); border: 1px solid var(--blue); color: var(--blue); border-radius: 999px; padding: 0.3rem 0.8rem; font-size: 0.78rem; margin-top: 0.5rem; }
         .start-btn { width: 100%; background: linear-gradient(135deg, #059669, #10b981); border-radius: 12px; padding: 1.1rem; color: #fff; font-weight: 800; font-size: 1.1rem; cursor: pointer; border: none; margin-top: 0.5rem; }
         .start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -39,9 +39,9 @@
         .progress-track { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; margin-top: 8px; }
         .progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--blue), var(--green)); transition: width 0.3s; }
         #transcriptOutput { width: 100%; height: 350px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; color: var(--text); font-family: 'Space Mono', monospace; font-size: 0.85rem; line-height: 1.7; outline: none; margin-top: 10px; }
-        .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--green); color: var(--green); padding: 0.6rem 1.5rem; border-radius: 999px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+        .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--green); color: var(--green); padding: 0.6rem 1.5rem; border-radius: 999px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; }
         .toast.show { opacity: 1; }
-        .error-box { display: none; margin-top: 0.75rem; background: rgba(239,68,68,0.1); border: 1px solid var(--red); border-radius: 10px; padding: 0.75rem; color: #fca5a5; font-size: 0.82rem; word-break: break-all; }
+        .error-box { display: none; margin-top: 0.75rem; background: rgba(239,68,68,0.1); border: 1px solid var(--red); border-radius: 10px; padding: 1rem; color: #fca5a5; font-size: 0.82rem; word-break: break-all; }
     </style>
 </head>
 <body>
@@ -49,7 +49,7 @@
 <div class="wrap">
     <header>
         <div class="logo">Tok2Much</div>
-        <div class="version">v2.7 · Stable Build</div>
+        <div class="version">v2.8 · Stable Build</div>
     </header>
 
     <div class="grid2">
@@ -65,7 +65,7 @@
         <div class="card">
             <div class="card-label">2 · Cloud</div>
             <button id="driveBtn" class="drive-btn">Connect Google Drive</button>
-            <p style="font-size:0.65rem; color:var(--muted); margin-top:8px;">Required for files over 25MB.</p>
+            <p style="font-size:0.65rem; color:var(--muted); margin-top:8px;">Used for handling 1GB files safely.</p>
         </div>
     </div>
 
@@ -108,8 +108,8 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-    import { FFmpeg } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm/index.js';
-    import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js';
+    import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/+esm';
+    import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/+esm';
 
     let ffmpeg = null;
     let googleToken = null;
@@ -139,7 +139,7 @@
         }
     };
 
-    // ── Core Functions ──────────────────────────────────────────────────────
+    // ── Logic ────────────────────────────────────────────────────────────────
     async function handleDriveAuth() {
         if (!window.google) return alert("Google script not loaded.");
         const client = google.accounts.oauth2.initTokenClient({
@@ -158,7 +158,8 @@
 
     async function processAll() {
         const apiKey = document.getElementById('oaKey').value.trim();
-        if (!selectedFile || !apiKey) return alert("Missing Key or File!");
+        if (!selectedFile || !apiKey) return alert("Missing API Key or File!");
+        if (!window.crossOriginIsolated) return alert("Security Error: COI Not Active. Please refresh (Ctrl+F5) or ensure coi-serviceworker.js is in your repo.");
 
         document.getElementById('startBtn').disabled = true;
         document.getElementById('statusBox').style.display = 'block';
@@ -172,9 +173,9 @@
             }
 
             if (!ffmpeg) {
-                setStatus("Waking up AI...", 20);
+                setStatus("Loading Engine...", 25);
                 ffmpeg = new FFmpeg();
-                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+                const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
                 await ffmpeg.load({
                     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
@@ -182,7 +183,7 @@
                 });
             }
 
-            setStatus("Extracting audio stream...", 35);
+            setStatus("Optimizing Audio...", 40);
             await ffmpeg.writeFile('input', await fetchFile(selectedFile));
             await ffmpeg.exec(['-i', 'input', '-f', 'segment', '-segment_time', '600', '-ac', '1', '-b:a', '64k', 'out%03d.mp3']);
 
@@ -191,27 +192,27 @@
 
             let fullText = "";
             for (let i = 0; i < chunkNames.length; i++) {
-                setStatus(`Transcribing part ${i+1}/${chunkNames.length}...`, 40 + Math.round((i/chunkNames.length)*50));
+                const stepPct = 40 + Math.round((i/chunkNames.length)*50);
+                setStatus(`Transcribing part ${i+1}/${chunkNames.length}...`, stepPct);
                 const data = await ffmpeg.readFile(chunkNames[i]);
                 const blob = new Blob([data.buffer], { type: 'audio/mp3' });
                 const text = await transcribeChunk(blob, apiKey);
                 fullText += text + " ";
                 document.getElementById('transcriptOutput').value = fullText;
-                // Cleanup temp chunk from memory
-                await ffmpeg.deleteFile(chunkNames[i]);
+                await ffmpeg.deleteFile(chunkNames[i]); // Free memory
             }
 
             if (driveId) {
-                setStatus("Final cleanup...", 95);
+                setStatus("Cleaning Drive...", 95);
                 await deleteFromDrive(driveId);
             }
 
-            setStatus("Success! ✅", 100);
-            showToast("Transcription Complete!");
+            setStatus("Done! ✅", 100);
+            showToast("Success!");
 
         } catch (e) {
             console.error(e);
-            document.getElementById('errorBox').innerText = "Error: " + e.message;
+            document.getElementById('errorBox').innerText = "Network Error: " + e.message + " (Check your internet or API balance)";
             document.getElementById('errorBox').style.display = 'block';
         } finally {
             document.getElementById('startBtn').disabled = false;
@@ -241,7 +242,7 @@
             headers: { 'Authorization': `Bearer ${key}` },
             body: fd
         });
-        if (!res.ok) throw new Error("Whisper Failed. Check API Balance.");
+        if (!res.ok) throw new Error("AI call failed. Check OpenAI Credits.");
         return await res.text();
     }
 
@@ -265,6 +266,7 @@
 
     function downloadDoc() {
         const content = document.getElementById('transcriptOutput').value;
+        if (!content) return;
         const preHtml = "<html><head><meta charset='utf-8'></head><body style='font-family:Arial; line-height:1.6;'>";
         const postHtml = "</body></html>";
         const html = preHtml + content.replace(/\n/g, '<br>') + postHtml;
@@ -272,7 +274,7 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `Transcription_${new Date().toISOString().slice(0,10)}.doc`;
+        a.download = `Tok2Much_${new Date().toISOString().split('T')[0]}.doc`;
         a.click();
     }
 
