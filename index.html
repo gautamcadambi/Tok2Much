@@ -219,4 +219,461 @@
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: 10px;
-      
+      padding: 1.25rem;
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      font-size: 0.85rem;
+      line-height: 1.7;
+      outline: none;
+      margin-top: 10px;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface);
+      border: 1px solid var(--green);
+      color: var(--green);
+      padding: 0.6rem 1.5rem;
+      border-radius: 999px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    .toast.show { opacity: 1; }
+
+    .error-box {
+      display: none;
+      margin-top: 0.75rem;
+      background: var(--red-glow);
+      border: 1px solid var(--red);
+      border-radius: 10px;
+      padding: 1rem;
+      color: #fca5a5;
+      font-size: 0.82rem;
+      word-break: break-word;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+
+    .hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .act-btn {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .act-btn.primary {
+      background: var(--blue);
+      color: white;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="logo">Tok2Much</div>
+    <div class="version">v3.0 · Stable Build</div>
+  </header>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-label">1 · Config</div>
+      <input type="password" id="oaKey" placeholder="Paste OpenAI Key (sk-...)" autocomplete="off">
+      <div class="lang-toggle">
+        <button class="lang-btn active" data-lang="en" type="button">English</button>
+        <button class="lang-btn" data-lang="hi" type="button">हिन्दी</button>
+        <button class="lang-btn" data-lang="auto" type="button">Auto</button>
+      </div>
+      <p class="hint">Use Auto for mixed Hindi-English audio.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-label">2 · Cloud</div>
+      <button id="driveBtn" class="drive-btn" type="button">Connect Google Drive</button>
+      <p class="hint">Optional backup before transcription. File is auto-deleted after success.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">3 · Media</div>
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" hidden accept="video/*,audio/*">
+      <div style="font-size:1.5rem;">🎙️</div>
+      <div style="font-weight:600; font-size:0.95rem;">Select or Drag Media</div>
+      <div id="filePill" style="display:none" class="file-pill">
+        <span id="fileNameSpan"></span>
+      </div>
+    </div>
+    <p class="hint">Supports audio and video files. Large files are chunked automatically.</p>
+  </div>
+
+  <button class="start-btn" id="startBtn" type="button">⚡ Start Transcription</button>
+
+  <div id="statusBox">
+    <div class="status-bar-wrap">
+      <div style="display:flex; justify-content:space-between; gap:1rem; font-size:0.75rem;">
+        <span id="statusText">Ready...</span>
+        <span id="pctText">0%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="errorBox" class="error-box"></div>
+
+  <div class="card" style="margin-top:1rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;">
+      <div class="card-label" style="margin:0;">Transcription Output</div>
+      <div class="actions">
+        <button class="act-btn" id="copyBtn" type="button">Copy</button>
+        <button class="act-btn primary" id="dlBtn" type="button">Download .txt</button>
+      </div>
+    </div>
+    <textarea id="transcriptOutput" readonly placeholder="Output will appear here..."></textarea>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { FFmpeg } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.6/dist/esm/index.js';
+  import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js';
+
+  let ffmpeg = null;
+  let googleToken = null;
+  let selectedFile = null;
+  let selectedLang = 'en';
+
+  const driveBtn = document.getElementById('driveBtn');
+  const startBtn = document.getElementById('startBtn');
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const filePill = document.getElementById('filePill');
+  const fileNameSpan = document.getElementById('fileNameSpan');
+  const transcriptOutput = document.getElementById('transcriptOutput');
+  const errorBox = document.getElementById('errorBox');
+
+  driveBtn.onclick = handleDriveAuth;
+  startBtn.onclick = processAll;
+  document.getElementById('copyBtn').onclick = copyText;
+  document.getElementById('dlBtn').onclick = downloadTxt;
+
+  dropZone.onclick = () => fileInput.click();
+
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('dragover');
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const file = e.dataTransfer.files?.[0];
+    if (file) setSelectedFile(file);
+  });
+
+  fileInput.onchange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) setSelectedFile(file);
+  };
+
+  document.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.onclick = () => {
+      selectedLang = btn.dataset.lang;
+      document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    };
+  });
+
+  function setSelectedFile(file) {
+    selectedFile = file;
+    fileNameSpan.innerText = file.name;
+    filePill.style.display = 'inline-flex';
+  }
+
+  async function handleDriveAuth() {
+    try {
+      if (!window.google || !google.accounts?.oauth2) {
+        throw new Error('Google script not loaded. Refresh and try again.');
+      }
+
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: '368074028095-7m4hqvksdk1rcbnsbj9eeca5fh4odblf.apps.googleusercontent.com',
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        callback: (res) => {
+          if (res.error) {
+            showError(`Google Drive auth failed: ${res.error}`);
+            return;
+          }
+          if (res.access_token) {
+            googleToken = res.access_token;
+            driveBtn.innerText = '✅ Drive Connected';
+            driveBtn.classList.add('connected');
+            showToast('Google Drive connected');
+          }
+        }
+      });
+
+      client.requestAccessToken();
+    } catch (e) {
+      showError(e.message);
+    }
+  }
+
+  async function processAll() {
+    const apiKey = document.getElementById('oaKey').value.trim();
+
+    if (!selectedFile || !apiKey) {
+      alert('Missing API Key or File!');
+      return;
+    }
+
+    if (!window.crossOriginIsolated) {
+      alert('Security Error: crossOriginIsolated is OFF. Ensure coi-serviceworker.js exists at the site root, then hard refresh.');
+      return;
+    }
+
+    startBtn.disabled = true;
+    document.getElementById('statusBox').style.display = 'block';
+    hideError();
+    transcriptOutput.value = '';
+
+    let driveId = null;
+
+    try {
+      if (googleToken) {
+        setStatus('Backing up to Drive...', 10);
+        driveId = await uploadToDrive(selectedFile);
+      }
+
+      if (!ffmpeg) {
+        setStatus('Waking up AI Processor...', 25);
+        ffmpeg = new FFmpeg();
+
+        const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+        await ffmpeg.load({
+          coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+          workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
+        });
+      }
+
+      setStatus('Optimizing & Extracting Audio...', 45);
+
+      try { await ffmpeg.deleteFile('input'); } catch {}
+      await ffmpeg.writeFile('input', await fetchFile(selectedFile));
+
+      await ffmpeg.exec([
+        '-i', 'input',
+        '-map', '0:a:0',
+        '-f', 'segment',
+        '-segment_time', '600',
+        '-ac', '1',
+        '-ar', '16000',
+        '-b:a', '64k',
+        'out%03d.mp3'
+      ]);
+
+      const files = await ffmpeg.listDir('.');
+      const chunkNames = files
+        .map(f => f.name)
+        .filter(name => /^out\d{3}\.mp3$/.test(name))
+        .sort();
+
+      if (!chunkNames.length) {
+        throw new Error('No audio chunks were generated. The input file may be unsupported or contain no audio track.');
+      }
+
+      let fullText = '';
+
+      for (let i = 0; i < chunkNames.length; i++) {
+        const step = 50 + Math.round(((i + 1) / chunkNames.length) * 40);
+        setStatus(`Transcribing part ${i + 1}/${chunkNames.length}...`, step);
+
+        const data = await ffmpeg.readFile(chunkNames[i]);
+        const blob = new Blob([data.buffer], { type: 'audio/mpeg' });
+        const text = await transcribeChunk(blob, apiKey);
+
+        fullText += (fullText ? '\n\n' : '') + text.trim();
+        transcriptOutput.value = fullText;
+
+        try { await ffmpeg.deleteFile(chunkNames[i]); } catch {}
+      }
+
+      try { await ffmpeg.deleteFile('input'); } catch {}
+
+      if (driveId) {
+        setStatus('Cleaning up cloud storage...', 97);
+        await deleteFromDrive(driveId);
+      }
+
+      setStatus('Done! ✅', 100);
+      showToast('Transcription successful');
+    } catch (e) {
+      console.error(e);
+      showError(`Error: ${e.message}`);
+    } finally {
+      startBtn.disabled = false;
+    }
+  }
+
+  async function uploadToDrive(file) {
+    const metadata = {
+      name: `tok_${Date.now()}_${file.name}`,
+      mimeType: file.type || 'application/octet-stream'
+    };
+
+    const initRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${googleToken}`,
+        'Content-Type': 'application/json; charset=UTF-8'
+      },
+      body: JSON.stringify(metadata)
+    });
+
+    if (!initRes.ok) {
+      const txt = await initRes.text().catch(() => '');
+      throw new Error(`Drive init failed: ${initRes.status} ${txt}`);
+    }
+
+    const sessionUrl = initRes.headers.get('Location') || initRes.headers.get('location');
+    if (!sessionUrl) {
+      throw new Error('Drive resumable session URL missing.');
+    }
+
+    const uploadRes = await fetch(sessionUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream'
+      },
+      body: file
+    });
+
+    if (!uploadRes.ok) {
+      const txt = await uploadRes.text().catch(() => '');
+      throw new Error(`Drive upload failed: ${uploadRes.status} ${txt}`);
+    }
+
+    const data = await uploadRes.json();
+    return data.id;
+  }
+
+  async function transcribeChunk(blob, key) {
+    const fd = new FormData();
+    fd.append('file', blob, 'chunk.mp3');
+    fd.append('model', 'gpt-4o-mini-transcribe');
+    if (selectedLang !== 'auto') fd.append('language', selectedLang);
+    fd.append('response_format', 'text');
+
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`
+      },
+      body: fd
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Transcription failed: ${res.status} ${txt}`);
+    }
+
+    return await res.text();
+  }
+
+  async function deleteFromDrive(id) {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${googleToken}` }
+    });
+
+    if (!res.ok && res.status !== 404) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`Drive delete failed: ${res.status} ${txt}`);
+    }
+  }
+
+  function setStatus(text, pct) {
+    document.getElementById('statusText').innerText = text;
+    document.getElementById('pctText').innerText = `${pct}%`;
+    document.getElementById('progressFill').style.width = `${pct}%`;
+  }
+
+  function copyText() {
+    const text = transcriptOutput.value.trim();
+    if (!text) {
+      showToast('Nothing to copy');
+      return;
+    }
+    navigator.clipboard.writeText(text);
+    showToast('Copied to clipboard');
+  }
+
+  function downloadTxt() {
+    const content = transcriptOutput.value;
+    if (!content.trim()) {
+      showToast('Nothing to download');
+      return;
+    }
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Tok2Much_${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function showToast(message) {
+    const t = document.getElementById('toast');
+    t.innerText = message;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  function showError(message) {
+    errorBox.innerText = message;
+    errorBox.style.display = 'block';
+  }
+
+  function hideError() {
+    errorBox.innerText = '';
+    errorBox.style.display = 'none';
+  }
+</script>
+</body>
+</html>
