@@ -41,7 +41,7 @@
         #transcriptOutput { width: 100%; height: 350px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; color: var(--text); font-family: 'Space Mono', monospace; font-size: 0.85rem; line-height: 1.7; outline: none; margin-top: 10px; }
         .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--green); color: var(--green); padding: 0.6rem 1.5rem; border-radius: 999px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
         .toast.show { opacity: 1; }
-        .error-box { display: none; margin-top: 0.75rem; background: rgba(239,68,68,0.1); border: 1px solid var(--red); border-radius: 10px; padding: 0.75rem; color: #fca5a5; font-size: 0.82rem; }
+        .error-box { display: none; margin-top: 0.75rem; background: rgba(239,68,68,0.1); border: 1px solid var(--red); border-radius: 10px; padding: 0.75rem; color: #fca5a5; font-size: 0.82rem; word-break: break-all; }
     </style>
 </head>
 <body>
@@ -49,7 +49,7 @@
 <div class="wrap">
     <header>
         <div class="logo">Tok2Much</div>
-        <div class="version">v2.6 · Final Build</div>
+        <div class="version">v2.7 · Stable Build</div>
     </header>
 
     <div class="grid2">
@@ -65,7 +65,7 @@
         <div class="card">
             <div class="card-label">2 · Cloud</div>
             <button id="driveBtn" class="drive-btn">Connect Google Drive</button>
-            <p style="font-size:0.65rem; color:var(--muted); margin-top:8px;">Used for handling 1GB files and cleanup.</p>
+            <p style="font-size:0.65rem; color:var(--muted); margin-top:8px;">Required for files over 25MB.</p>
         </div>
     </div>
 
@@ -108,20 +108,15 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-    import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.7/+esm';
-    import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/+esm';
+    import { FFmpeg } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/esm/index.js';
+    import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js';
 
     let ffmpeg = null;
     let googleToken = null;
     let selectedFile = null;
     let selectedLang = 'en';
 
-    // ── Pre-flight check for COI ─────────────────────────────────────────────
-    if (!window.crossOriginIsolated) {
-        console.warn("COI Not Active. FFmpeg might fail. Ensure coi-serviceworker.js is in repo.");
-    }
-
-    // ── Event Listeners (Fixes Scoping) ──────────────────────────────────────
+    // ── Setup Listeners ──────────────────────────────────────────────────────
     document.getElementById('driveBtn').onclick = handleDriveAuth;
     document.getElementById('startBtn').onclick = processAll;
     document.getElementById('dropZone').onclick = () => document.getElementById('fileInput').click();
@@ -144,9 +139,9 @@
         }
     };
 
-    // ── Main Functions ───────────────────────────────────────────────────────
+    // ── Core Functions ──────────────────────────────────────────────────────
     async function handleDriveAuth() {
-        if (!window.google) return alert("Google script not loaded. Check connection.");
+        if (!window.google) return alert("Google script not loaded.");
         const client = google.accounts.oauth2.initTokenClient({
             client_id: '368074028095-7m4hqvksdk1rcbnsbj9eeca5fh4odblf.apps.googleusercontent.com',
             scope: 'https://www.googleapis.com/auth/drive.file',
@@ -163,7 +158,7 @@
 
     async function processAll() {
         const apiKey = document.getElementById('oaKey').value.trim();
-        if (!selectedFile || !apiKey) return alert("Missing API Key or File!");
+        if (!selectedFile || !apiKey) return alert("Missing Key or File!");
 
         document.getElementById('startBtn').disabled = true;
         document.getElementById('statusBox').style.display = 'block';
@@ -172,20 +167,22 @@
         try {
             let driveId = null;
             if (googleToken) {
-                setStatus("Uploading to Drive...", 10);
+                setStatus("Backing up to Drive...", 10);
                 driveId = await uploadToDrive(selectedFile);
             }
 
             if (!ffmpeg) {
                 setStatus("Waking up AI...", 20);
                 ffmpeg = new FFmpeg();
+                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
                 await ffmpeg.load({
-                    coreURL: await toBlobURL('https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js', 'text/javascript'),
-                    wasmURL: await toBlobURL('https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm', 'application/wasm'),
+                    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                    workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
                 });
             }
 
-            setStatus("Extracting audio...", 35);
+            setStatus("Extracting audio stream...", 35);
             await ffmpeg.writeFile('input', await fetchFile(selectedFile));
             await ffmpeg.exec(['-i', 'input', '-f', 'segment', '-segment_time', '600', '-ac', '1', '-b:a', '64k', 'out%03d.mp3']);
 
@@ -200,10 +197,12 @@
                 const text = await transcribeChunk(blob, apiKey);
                 fullText += text + " ";
                 document.getElementById('transcriptOutput').value = fullText;
+                // Cleanup temp chunk from memory
+                await ffmpeg.deleteFile(chunkNames[i]);
             }
 
             if (driveId) {
-                setStatus("Cleanup...", 95);
+                setStatus("Final cleanup...", 95);
                 await deleteFromDrive(driveId);
             }
 
@@ -228,8 +227,7 @@
         });
         const url = res.headers.get('Location');
         const upload = await fetch(url, { method: 'PUT', body: file });
-        const data = await upload.json();
-        return data.id;
+        return (await upload.json()).id;
     }
 
     async function transcribeChunk(blob, key) {
@@ -243,7 +241,7 @@
             headers: { 'Authorization': `Bearer ${key}` },
             body: fd
         });
-        if (!res.ok) throw new Error("Whisper API Failed. Check Key/Balance.");
+        if (!res.ok) throw new Error("Whisper Failed. Check API Balance.");
         return await res.text();
     }
 
@@ -267,11 +265,14 @@
 
     function downloadDoc() {
         const content = document.getElementById('transcriptOutput').value;
-        const blob = new Blob([content], { type: 'text/plain' });
+        const preHtml = "<html><head><meta charset='utf-8'></head><body style='font-family:Arial; line-height:1.6;'>";
+        const postHtml = "</body></html>";
+        const html = preHtml + content.replace(/\n/g, '<br>') + postHtml;
+        const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = "Tok2Much_Transcript.txt";
+        a.download = `Transcription_${new Date().toISOString().slice(0,10)}.doc`;
         a.click();
     }
 
