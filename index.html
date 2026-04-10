@@ -85,7 +85,7 @@
       .grid2 { grid-template-columns: 1fr; }
     }
 
-    input[type="password"] {
+    input[type="password"], input[type="text"] {
       width: 100%;
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -94,9 +94,10 @@
       color: var(--text);
       font-family: 'Space Mono', monospace;
       outline: none;
+      font-size: 0.85rem;
     }
 
-    input[type="password"]:focus {
+    input[type="password"]:focus, input[type="text"]:focus {
       border-color: var(--border-active);
       box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
     }
@@ -116,6 +117,7 @@
       color: var(--muted);
       cursor: pointer;
       font-weight: 600;
+      font-family: 'Syne', sans-serif;
     }
 
     .lang-btn.active {
@@ -133,6 +135,7 @@
       font-weight: 700;
       cursor: pointer;
       border: none;
+      font-family: 'Syne', sans-serif;
     }
 
     .drive-btn.connected {
@@ -177,7 +180,7 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 1rem;
-      margin-top: 0.5rem;
+      margin-top: 0.75rem;
     }
 
     @media (max-width: 680px) {
@@ -193,6 +196,7 @@
       font-size: 1rem;
       cursor: pointer;
       border: none;
+      font-family: 'Syne', sans-serif;
     }
 
     .btn-upload { background: linear-gradient(135deg, #0f6df0, #3b82f6); }
@@ -210,6 +214,16 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 1rem;
+    }
+
+    .chunk-log {
+      margin-top: 0.6rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      max-height: 80px;
+      overflow-y: auto;
+      line-height: 1.6;
     }
 
     .progress-track {
@@ -290,6 +304,7 @@
       line-height: 1.7;
       outline: none;
       margin-top: 10px;
+      resize: vertical;
     }
 
     .toast {
@@ -332,6 +347,7 @@
       cursor: pointer;
       font-size: 0.75rem;
       font-weight: 700;
+      font-family: 'Syne', sans-serif;
     }
 
     .act-btn.primary {
@@ -339,13 +355,26 @@
       color: white;
       border: none;
     }
+
+    .chunk-badge {
+      display: inline-block;
+      background: var(--blue-glow);
+      border: 1px solid var(--blue);
+      color: var(--blue);
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-size: 0.68rem;
+      font-family: 'Space Mono', monospace;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div class="logo">Tok2Much</div>
-      <div class="version">v4.1 · Stable UI Build</div>
+      <div class="version">v5.0 · Chunked Transcription</div>
     </header>
 
     <div class="grid2">
@@ -358,15 +387,15 @@
           <button class="lang-btn" data-lang="auto" type="button">Auto</button>
         </div>
         <div class="meta">
-          Direct browser transcription still follows OpenAI request-size limits.
+          Files are split into ~10 MB chunks and transcribed sequentially. Works up to 1 GB in modern browsers.
         </div>
       </div>
 
       <div class="card">
-        <div class="card-label">2 · Cloud</div>
+        <div class="card-label">2 · Cloud (optional)</div>
         <button id="driveBtn" class="drive-btn" type="button">Connect Google Drive</button>
         <div class="meta">
-          Large files can be uploaded to Drive first. Oversized files still need chunking or a backend to transcribe.
+          Connect Drive to archive a copy of your file. Transcription runs directly in the browser — Drive is optional.
         </div>
       </div>
     </div>
@@ -374,16 +403,17 @@
     <div class="card">
       <div class="card-label">3 · Media</div>
       <div class="drop-zone" id="dropZone">
-        <input type="file" id="fileInput" hidden accept="video/*,audio/*,.mp3,.mp4,.mpeg,.mpga,.wav,.webm,.m4a,.mov">
+        <input type="file" id="fileInput" hidden accept="video/*,audio/*,.mp3,.mp4,.mpeg,.mpga,.wav,.webm,.m4a,.mov,.ogg,.flac">
         <div style="font-size:1.5rem;">🎙️</div>
         <div style="font-weight:600; font-size:0.95rem;">Select or Drag Media</div>
+        <div style="font-size:0.78rem; color:var(--muted); margin-top:0.4rem;">Audio or video up to 1 GB</div>
         <div id="filePill" style="display:none" class="file-pill">
           <span id="fileNameSpan"></span>
         </div>
       </div>
 
       <div id="capacityNotice" class="notice info">
-        You can upload large files to Drive from this page. Direct transcription from the browser still depends on OpenAI request size limits.
+        Select a file to begin. Large files are automatically split into chunks for transcription.
       </div>
 
       <div class="cta-row">
@@ -392,11 +422,11 @@
       </div>
 
       <div class="meta">
-        If buttons seem inactive, check the debug panel below for the exact browser error.
+        Transcription works for any file size — chunks are sent to OpenAI Whisper one at a time.
       </div>
     </div>
 
-    <div id="statusBox">
+    <div id="statusBox" style="display:none;">
       <div class="status-bar-wrap">
         <div style="display:flex; justify-content:space-between; gap:1rem; font-size:0.75rem;">
           <span id="statusText">Ready...</span>
@@ -405,6 +435,7 @@
         <div class="progress-track">
           <div class="progress-fill" id="progressFill"></div>
         </div>
+        <div class="chunk-log" id="chunkLog"></div>
       </div>
     </div>
 
@@ -414,7 +445,10 @@
 
     <div class="card" style="margin-top:1rem;">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;">
-        <div class="card-label" style="margin:0;">Transcription Output</div>
+        <div class="card-label" style="margin:0;">
+          Transcription Output
+          <span id="chunkBadge" class="chunk-badge" style="display:none;"></span>
+        </div>
         <div class="actions">
           <button class="act-btn" id="copyBtn" type="button">Copy</button>
           <button class="act-btn primary" id="dlBtn" type="button">Download .txt</button>
@@ -430,10 +464,15 @@
     document.addEventListener('DOMContentLoaded', () => {
       let googleToken = null;
       let selectedFile = null;
+      let abortController = null;
+
+      const CHUNK_SIZE_MB = 10; // 10 MB per chunk — well under OpenAI's 25 MB limit
+      const CHUNK_SIZE = CHUNK_SIZE_MB * 1024 * 1024;
 
       const state = {
         selectedLang: 'en',
-        lastDriveFileId: null
+        lastDriveFileId: null,
+        isRunning: false
       };
 
       const els = {
@@ -454,6 +493,8 @@
         statusText: document.getElementById('statusText'),
         pctText: document.getElementById('pctText'),
         progressFill: document.getElementById('progressFill'),
+        chunkLog: document.getElementById('chunkLog'),
+        chunkBadge: document.getElementById('chunkBadge'),
         copyBtn: document.getElementById('copyBtn'),
         dlBtn: document.getElementById('dlBtn')
       };
@@ -461,7 +502,14 @@
       function debug(msg) {
         els.debugBox.style.display = 'block';
         els.debugBox.textContent = msg;
-        console.log(msg);
+        console.log('[Tok2Much]', msg);
+      }
+
+      function logChunk(msg) {
+        const line = document.createElement('div');
+        line.textContent = msg;
+        els.chunkLog.appendChild(line);
+        els.chunkLog.scrollTop = els.chunkLog.scrollHeight;
       }
 
       function showToast(message) {
@@ -474,7 +522,7 @@
       function showError(message) {
         els.errorBox.innerText = message;
         els.errorBox.style.display = 'block';
-        debug(message);
+        console.error('[Tok2Much]', message);
       }
 
       function hideError() {
@@ -485,15 +533,20 @@
       function setStatus(text, pct) {
         els.statusBox.style.display = 'block';
         els.statusText.innerText = text;
-        els.pctText.innerText = `${pct}%`;
+        els.pctText.innerText = `${Math.round(pct)}%`;
         els.progressFill.style.width = `${pct}%`;
       }
 
       function formatBytes(bytes) {
         if (bytes < 1024) return `${bytes} B`;
         if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-        if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+        if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
         return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+      }
+
+      function setAllDisabled(disabled) {
+        els.transcribeBtn.disabled = disabled;
+        els.uploadDriveBtn.disabled = disabled;
       }
 
       function setSelectedFile(file) {
@@ -502,130 +555,80 @@
         hideError();
         els.driveResultNotice.style.display = 'none';
         els.transcriptOutput.value = '';
+        els.chunkLog.innerHTML = '';
+        els.chunkBadge.style.display = 'none';
         els.fileNameSpan.innerText = `${file.name} · ${formatBytes(file.size)}`;
         els.filePill.style.display = 'inline-flex';
+
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
         if (file.size > 25 * 1024 * 1024) {
           els.capacityNotice.className = 'notice warn';
           els.capacityNotice.innerText =
-            'This file is larger than the direct OpenAI transcription request limit. Drive upload is supported, but actual transcription needs chunking or a backend.';
+            `Large file detected (${formatBytes(file.size)}). Will be split into ${totalChunks} chunk${totalChunks > 1 ? 's' : ''} of ~${CHUNK_SIZE_MB} MB each and transcribed sequentially. This may take several minutes.`;
         } else {
           els.capacityNotice.className = 'notice info';
           els.capacityNotice.innerText =
-            'This file is within direct transcription size limits, so you can upload it to Drive or transcribe it immediately.';
+            `File is ${formatBytes(file.size)} — within direct transcription limits. Will transcribe in 1 chunk.`;
         }
       }
+
+      // ─── GOOGLE DRIVE AUTH ────────────────────────────────────────────────────
 
       async function handleDriveAuth() {
         try {
           debug('Drive auth button clicked.');
-
           if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
-            throw new Error('Google Identity Services has not loaded yet. Wait 2 seconds and try again.');
+            throw new Error('Google Identity Services not loaded yet. Wait 2 seconds and try again.');
           }
-
           const client = google.accounts.oauth2.initTokenClient({
             client_id: '368074028095-7m4hqvksdk1rcbnsbj9eeca5fh4odblf.apps.googleusercontent.com',
             scope: 'https://www.googleapis.com/auth/drive.file',
             callback: (res) => {
-              if (res.error) {
-                showError(`Google Drive auth failed: ${res.error}`);
-                return;
-              }
+              if (res.error) { showError(`Drive auth failed: ${res.error}`); return; }
               if (res.access_token) {
                 googleToken = res.access_token;
                 els.driveBtn.innerText = '✅ Drive Connected';
                 els.driveBtn.classList.add('connected');
                 showToast('Google Drive connected');
-                debug('Drive connected successfully.');
+                debug('Drive connected.');
               }
             }
           });
-
           client.requestAccessToken();
         } catch (e) {
           showError(e.message);
         }
       }
 
+      // ─── DRIVE UPLOAD ─────────────────────────────────────────────────────────
+
       async function uploadLargeFileToDrive() {
         try {
-          debug('Upload to Drive button clicked.');
           hideError();
-
           if (!selectedFile) throw new Error('Please select a file first.');
           if (!googleToken) throw new Error('Connect Google Drive first.');
 
-          els.uploadDriveBtn.disabled = true;
-          els.transcribeBtn.disabled = true;
-          setStatus('Starting resumable Drive upload...', 10);
+          setAllDisabled(true);
+          els.chunkLog.innerHTML = '';
+          setStatus('Starting resumable Drive upload...', 5);
 
           const fileId = await uploadToDriveResumable(selectedFile, (pct) => {
-            setStatus('Uploading to Drive...', pct);
+            setStatus(`Uploading to Drive... (${formatBytes(selectedFile.size)})`, pct);
           });
 
           state.lastDriveFileId = fileId;
           els.driveResultNotice.style.display = 'block';
           els.driveResultNotice.innerText =
-            `Drive upload complete for "${selectedFile.name}". File ID: ${fileId}.`;
+            `Drive upload complete — "${selectedFile.name}" · File ID: ${fileId}`;
 
           setStatus('Drive upload complete ✅', 100);
           showToast('Uploaded to Drive');
         } catch (e) {
           showError(`Drive upload error: ${e.message}`);
         } finally {
-          els.uploadDriveBtn.disabled = false;
-          els.transcribeBtn.disabled = false;
+          setAllDisabled(false);
         }
-      }
-
-      async function transcribeSelectedFile() {
-        try {
-          debug('Transcribe button clicked.');
-          hideError();
-
-          const apiKey = els.oaKeyInput.value.trim();
-          if (!selectedFile || !apiKey) throw new Error('Missing API key or file.');
-
-          els.transcribeBtn.disabled = true;
-          els.uploadDriveBtn.disabled = true;
-
-          if (selectedFile.size > 25 * 1024 * 1024) {
-            throw new Error('This file exceeds the browser transcription request limit. Upload to Drive works, but transcription needs chunking or a backend.');
-          }
-
-          setStatus('Uploading file to OpenAI...', 40);
-          const text = await transcribeFile(selectedFile, apiKey, state.selectedLang);
-          setStatus('Writing transcript...', 85);
-          els.transcriptOutput.value = text;
-          setStatus('Done! ✅', 100);
-          showToast('Transcription successful');
-        } catch (e) {
-          showError(`Transcription error: ${e.message}`);
-        } finally {
-          els.transcribeBtn.disabled = false;
-          els.uploadDriveBtn.disabled = false;
-        }
-      }
-
-      async function transcribeFile(file, key, lang) {
-        const fd = new FormData();
-        fd.append('file', file, file.name);
-        fd.append('model', 'gpt-4o-mini-transcribe');
-        if (lang !== 'auto') fd.append('language', lang);
-        fd.append('response_format', 'text');
-
-        const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${key}` },
-          body: fd
-        });
-
-        if (!res.ok) {
-          const txt = await res.text().catch(() => '');
-          throw new Error(`OpenAI error ${res.status}: ${txt}`);
-        }
-        return await res.text();
       }
 
       async function uploadToDriveResumable(file, onProgress) {
@@ -647,17 +650,17 @@
 
         if (!startRes.ok) {
           const txt = await startRes.text().catch(() => '');
-          throw new Error(`Drive session init failed: ${startRes.status} ${txt}`);
+          throw new Error(`Drive session init failed ${startRes.status}: ${txt}`);
         }
 
         const sessionUrl = startRes.headers.get('Location') || startRes.headers.get('location');
-        if (!sessionUrl) throw new Error('Drive session URL missing.');
+        if (!sessionUrl) throw new Error('Drive session URL missing from response headers.');
 
-        const chunkSize = 8 * 1024 * 1024;
+        const driveChunkSize = 8 * 1024 * 1024; // 8 MB Drive chunks
         let offset = 0;
 
         while (offset < file.size) {
-          const chunk = file.slice(offset, offset + chunkSize);
+          const chunk = file.slice(offset, offset + driveChunkSize);
           const end = offset + chunk.size - 1;
 
           const res = await fetch(sessionUrl, {
@@ -670,7 +673,13 @@
           });
 
           if (res.status === 308) {
-            offset = end + 1;
+            // Incomplete — continue
+            const rangeHeader = res.headers.get('Range');
+            if (rangeHeader) {
+              offset = parseInt(rangeHeader.split('-')[1]) + 1;
+            } else {
+              offset = end + 1;
+            }
             const pct = Math.min(95, Math.round((offset / file.size) * 100));
             if (onProgress) onProgress(pct);
             continue;
@@ -683,32 +692,140 @@
           }
 
           const txt = await res.text().catch(() => '');
-          throw new Error(`Drive chunk upload failed: ${res.status} ${txt}`);
+          throw new Error(`Drive chunk upload failed ${res.status}: ${txt}`);
         }
 
-        throw new Error('Drive upload did not complete.');
+        throw new Error('Drive upload loop ended without completion.');
       }
 
-      function copyText() {
-        debug('Copy button clicked.');
-        const text = els.transcriptOutput.value.trim();
-        if (!text) {
-          showToast('Nothing to copy');
-          return;
+      // ─── TRANSCRIPTION (CHUNKED) ──────────────────────────────────────────────
+
+      async function transcribeSelectedFile() {
+        try {
+          hideError();
+          const apiKey = els.oaKeyInput.value.trim();
+
+          if (!selectedFile) throw new Error('No file selected.');
+          if (!apiKey) throw new Error('OpenAI API key is required.');
+          if (!apiKey.startsWith('sk-')) throw new Error('API key must start with sk-');
+
+          setAllDisabled(true);
+          state.isRunning = true;
+          els.transcriptOutput.value = '';
+          els.chunkLog.innerHTML = '';
+          els.chunkBadge.style.display = 'none';
+
+          const totalChunks = Math.ceil(selectedFile.size / CHUNK_SIZE);
+          debug(`Starting chunked transcription. File: ${formatBytes(selectedFile.size)}, Chunks: ${totalChunks}`);
+
+          setStatus(`Preparing ${totalChunks} chunk${totalChunks > 1 ? 's' : ''}...`, 2);
+
+          // Determine the audio extension to use for each chunk
+          // OpenAI requires a recognisable audio extension — we keep the original or fall back to .mp3
+          const ext = getAudioExtension(selectedFile);
+
+          const transcriptParts = [];
+
+          for (let i = 0; i < totalChunks; i++) {
+            if (!state.isRunning) break;
+
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, selectedFile.size);
+            const blob = selectedFile.slice(start, end, selectedFile.type || 'audio/mpeg');
+
+            const chunkLabel = `Chunk ${i + 1}/${totalChunks} (${formatBytes(blob.size)})`;
+            logChunk(`⏳ ${chunkLabel} — sending to Whisper...`);
+
+            const basePct = (i / totalChunks) * 100;
+            setStatus(`Transcribing ${chunkLabel}`, basePct + 1);
+
+            const chunkFile = new File([blob], `chunk_${i}.${ext}`, { type: blob.type || 'audio/mpeg' });
+            const text = await transcribeChunk(chunkFile, apiKey, state.selectedLang);
+
+            transcriptParts.push(text.trim());
+            logChunk(`✅ ${chunkLabel} — done`);
+
+            const newPct = ((i + 1) / totalChunks) * 100;
+            setStatus(`Transcribed ${i + 1}/${totalChunks} chunks`, newPct);
+
+            // Show partial transcript as we go
+            els.transcriptOutput.value = transcriptParts.join('\n\n');
+          }
+
+          const fullTranscript = transcriptParts.join('\n\n');
+          els.transcriptOutput.value = fullTranscript;
+
+          els.chunkBadge.style.display = 'inline-block';
+          els.chunkBadge.textContent = `${totalChunks} chunk${totalChunks > 1 ? 's' : ''}`;
+
+          setStatus('Transcription complete ✅', 100);
+          showToast(`Done! ${totalChunks} chunk${totalChunks > 1 ? 's' : ''} transcribed`);
+          debug(`Transcription complete. Total chars: ${fullTranscript.length}`);
+
+        } catch (e) {
+          showError(`Transcription error: ${e.message}`);
+          debug(e.stack || e.message);
+        } finally {
+          setAllDisabled(false);
+          state.isRunning = false;
         }
+      }
+
+      function getAudioExtension(file) {
+        // Map MIME types and file extensions to what OpenAI Whisper accepts
+        const name = file.name.toLowerCase();
+        const mime = (file.type || '').toLowerCase();
+
+        if (name.endsWith('.mp3') || mime.includes('mpeg')) return 'mp3';
+        if (name.endsWith('.mp4') || mime.includes('mp4')) return 'mp4';
+        if (name.endsWith('.wav') || mime.includes('wav')) return 'wav';
+        if (name.endsWith('.webm') || mime.includes('webm')) return 'webm';
+        if (name.endsWith('.m4a') || mime.includes('m4a') || mime.includes('mp4a')) return 'mp4';
+        if (name.endsWith('.ogg') || mime.includes('ogg')) return 'ogg';
+        if (name.endsWith('.flac') || mime.includes('flac')) return 'flac';
+        if (name.endsWith('.mov')) return 'mp4';
+        if (name.endsWith('.mpga')) return 'mpga';
+
+        // Default fallback — mp3 is universally accepted by Whisper
+        return 'mp3';
+      }
+
+      async function transcribeChunk(chunkFile, key, lang) {
+        const fd = new FormData();
+        fd.append('file', chunkFile, chunkFile.name);
+        fd.append('model', 'whisper-1'); // whisper-1 is the stable transcription model
+        if (lang !== 'auto') fd.append('language', lang);
+        fd.append('response_format', 'text');
+
+        const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${key}` },
+          body: fd
+        });
+
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          let detail = '';
+          try { detail = JSON.parse(txt).error?.message || txt; } catch { detail = txt; }
+          throw new Error(`OpenAI ${res.status}: ${detail}`);
+        }
+
+        return await res.text();
+      }
+
+      // ─── COPY / DOWNLOAD ──────────────────────────────────────────────────────
+
+      function copyText() {
+        const text = els.transcriptOutput.value.trim();
+        if (!text) { showToast('Nothing to copy'); return; }
         navigator.clipboard.writeText(text)
           .then(() => showToast('Copied to clipboard'))
-          .catch(() => showError('Could not copy text to clipboard.'));
+          .catch(() => showError('Clipboard access denied. Try selecting text and copying manually.'));
       }
 
       function downloadTxt() {
-        debug('Download button clicked.');
         const content = els.transcriptOutput.value;
-        if (!content.trim()) {
-          showToast('Nothing to download');
-          return;
-        }
-
+        if (!content.trim()) { showToast('Nothing to download'); return; }
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -720,6 +837,8 @@
         URL.revokeObjectURL(url);
       }
 
+      // ─── EVENT LISTENERS ──────────────────────────────────────────────────────
+
       els.driveBtn.addEventListener('click', handleDriveAuth);
       els.uploadDriveBtn.addEventListener('click', uploadLargeFileToDrive);
       els.transcribeBtn.addEventListener('click', transcribeSelectedFile);
@@ -727,23 +846,17 @@
       els.dlBtn.addEventListener('click', downloadTxt);
 
       els.dropZone.addEventListener('click', () => els.fileInput.click());
-
       els.dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         els.dropZone.classList.add('dragover');
       });
-
-      els.dropZone.addEventListener('dragleave', () => {
-        els.dropZone.classList.remove('dragover');
-      });
-
+      els.dropZone.addEventListener('dragleave', () => els.dropZone.classList.remove('dragover'));
       els.dropZone.addEventListener('drop', (e) => {
         e.preventDefault();
         els.dropZone.classList.remove('dragover');
         const file = e.dataTransfer.files && e.dataTransfer.files[0];
         if (file) setSelectedFile(file);
       });
-
       els.fileInput.addEventListener('change', (e) => {
         const file = e.target.files && e.target.files[0];
         if (file) setSelectedFile(file);
@@ -754,19 +867,13 @@
           state.selectedLang = btn.dataset.lang;
           document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
-          debug(`Language set to: ${state.selectedLang}`);
         });
       });
 
-      window.addEventListener('error', (event) => {
-        showError(`JS runtime error: ${event.message}`);
-      });
+      window.addEventListener('error', (event) => showError(`JS error: ${event.message}`));
+      window.addEventListener('unhandledrejection', (event) => showError(`Unhandled error: ${event.reason}`));
 
-      window.addEventListener('unhandledrejection', (event) => {
-        showError(`Unhandled promise error: ${event.reason}`);
-      });
-
-      debug('UI initialized successfully.');
+      debug('UI ready. Using chunked transcription (whisper-1, 10 MB chunks).');
     });
   </script>
 </body>
