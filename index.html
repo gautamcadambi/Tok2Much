@@ -79,7 +79,7 @@
 <div class="wrap">
   <header>
     <div class="logo">Tok2Much</div>
-    <div class="version">v6.0 · Audio Decode + Chunk</div>
+    <div class="version">v6.1 · Audio Decode + Chunk (rounding fix)</div>
   </header>
 
   <div class="grid2">
@@ -264,10 +264,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Float32 → Int16 PCM
+    // NOTE: Math.round() is required here. Without it, the float-to-int
+    // assignment truncates instead of rounding, which corrupts samples and
+    // occasionally produces a WAV chunk malformed enough that OpenAI's
+    // server rejects it with a 500 error.
     const pcm16 = new Int16Array(length);
     for (let i = 0; i < length; i++) {
       const clamped = Math.max(-1, Math.min(1, mono[i]));
-      pcm16[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
+      pcm16[i] = Math.round(clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF);
     }
 
     // WAV file = 44-byte RIFF header + PCM data
@@ -504,7 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('error', e => showError(`JS error: ${e.message}`));
   window.addEventListener('unhandledrejection', e => showError(`Unhandled: ${e.reason}`));
 
-  debug('v6.0 ready — Web Audio decode + WAV chunk pipeline.');
+  debug('v6.1 ready — Web Audio decode + WAV chunk pipeline (rounding fix applied).');
 });
 </script>
 </body>
